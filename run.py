@@ -15,7 +15,7 @@ import cartopy
 import cartopy.crs as ccrs
 import xarray as xr
 
-loc = glob('/rho/raid/dongyu/*.nc')
+loc = sorted(glob('/rho/raid/dongyu/blended*.nc'))
 
 def check_tides(date, ff):
     '''Check tidal cycle for starting date and following 2 weeks.'''
@@ -34,13 +34,13 @@ def check_tides(date, ff):
 def init(name, ff):
     time_units = 'seconds since 1970-01-01  00:00:00'
 
-    nsteps = 25
+    nsteps = 10
 
     # Number of steps to divide model output for outputting drifter location
-    N = 5
+    N = 4
 
     # Number of days
-    ndays = 15
+    ndays = 14
 
     # # This is a forward-moving simulation
     # ff = 1
@@ -87,11 +87,15 @@ def init(name, ff):
                 time_units=time_units,
                 usespherical=True)
 
-    nd = 200  # number of drifters
-    ll0fname = 'calcs/ll0_inbay_' + str(nd) + '.npz'
+    dx = 300  # distance (meters) between drifters in x and y
+    ll0fname = 'calcs/ll0_inbay_dx' + str(dx) + '.npz'
     if not os.path.exists(ll0fname):
-        # Input starting locations as real space lon,lat locations
-        lon0, lat0 = np.meshgrid(np.linspace(-95.2, -94.5, nd), np.linspace(29, 29.78, nd))
+        llcrnrlon = -95.2; urcrnrlon = -94.5;
+        llcrnrlat = 29; urcrnrlat = 29.78;
+        xcrnrs, ycrnrs = grid.proj([llcrnrlon, urcrnrlon], [llcrnrlat, urcrnrlat])
+        X, Y = np.meshgrid(np.arange(xcrnrs[0], xcrnrs[1], dx), np.arange(ycrnrs[0], ycrnrs[1], dx))
+
+        lon0, lat0 = grid.proj(X, Y, inverse=True)
 
         # lon0, lat0 in projected coordinates
         x0, y0 = grid.proj(lon0, lat0)
@@ -117,18 +121,19 @@ def init(name, ff):
         # Eliminate points that are outside domain or in masked areas
         lon0, lat0 = tracpy.tools.check_points(lon0, lat0, tp.grid)
 
+        # save starting locations for future use
+        np.savez(ll0fname, lon0=lon0, lat0=lat0)
+
         # plot
         fig = plt.figure()
-        figname = 'figures/starting_points_bay_' + str(nd) + '.png'
+        figname = 'figures/starting_points_bay_dx' + str(dx) + '.png'
         ax = plt.axes(projection=ccrs.Mercator(central_longitude=-85.0))
         gl = ax.gridlines(linewidth=0.2, color='gray', alpha=0.5, linestyle='-', draw_labels=True)
         ax.set_extent([-95.4, -94.2, 28.8, 29.9], ccrs.PlateCarree())
         ax.coastlines(resolution='10m')  # coastline resolution options are '110m', '50m', '10m'
         ax.plot(lon0, lat0, 'r.', transform=ccrs.PlateCarree());
+        # import pdb; pdb.set_trace()
         fig.savefig(figname, bbox_inches='tight')
-
-        # save lon/lat
-        np.savez(ll0fname, lon0=lon0, lat0=lat0)
     else:
         dtemp = np.load(ll0fname)
         lon0 = dtemp['lon0']; lat0 = dtemp['lat0']
@@ -138,55 +143,42 @@ def init(name, ff):
 
 def run():
 
-    ffs = [1, -1, 1, -1, 1, -1]  # forward and backward moving simulations
+    ffs = [-1]  # forward and backward moving simulations
     # to keep consistent between sims
-    refdates = [datetime(2009, 4, 14, 0, 0), datetime(2009, 5, 14, 0, 0), datetime(2009, 6, 14, 0, 0)]
+    refdates = [datetime(2011, 7, 1, 0, 0)]
+    # refdates = [datetime(2010, 7, 1, 0, 0)]#,
+                # datetime(2011, 2, 1, 0, 0), datetime(2011, 7, 1, 0, 0)]
 
-    for refdate, ff in zip(refdates, ffs):
-        if ff == 1:
-            overallstartdate = refdate
-            overallstopdate = overallstartdate + timedelta(days=14)
-            basename = '_forward_15days_nd200'
-        elif ff == -1:
-            overallstartdate = refdate + timedelta(days=14)
-            overallstopdate = overallstartdate + timedelta(days=14)
-            basename = '_backward_15days_nd200'
+    for refdate in refdates:
+        for ff in ffs:
+            if ff == 1:
+                overallstartdate = refdate
+                overallstopdate = overallstartdate + timedelta(days=14)
+                basename = '_forward_14days_dx300'
+            elif ff == -1:
+                overallstartdate = refdate + timedelta(days=14)
+                overallstopdate = overallstartdate + timedelta(days=14)
+                basename = '_backward_14days_dx300'
 
-        date = overallstartdate
+            date = overallstartdate
 
-        # Start from the beginning and add days on for loop
-        # keep running until we hit the next month
-        while date < overallstopdate:
+            # Start from the beginning and add days on for loop
+            # keep running until we hit the next month
+            while date < overallstopdate:
 
-            name = date.isoformat()[0:13] + basename
+                name = date.isoformat()[0:13] + basename
 
-            # If the particle trajectories have not been run, run them
-            if not os.path.exists('tracks/' + name + '.nc') and \
-                not os.path.exists('tracks/' + name + 'gc.nc'):
+                # If the particle trajectories have not been run, run them
+                if not os.path.exists('tracks/' + name + '.nc') and \
+                    not os.path.exists('tracks/' + name + 'gc.nc'):
 
-                tp, lon0, lat0 = init(name, ff)
-                lonp, latp, zp, t, T0, U, V = tracpy.run.run(tp, date, lon0, lat0)
+                    tp, lon0, lat0 = init(name, ff)
+                    lonp, latp, zp, t, T0, U, V = tracpy.run.run(tp, date, lon0, lat0)
 
-            # Increment by 4 hours for next loop
-            date = date + timedelta(hours=4)
+                # Increment by 4 hours for next loop
+                date = date + timedelta(hours=4)
 
 
-def plot():
-
-    Files = glob('tracks/*_backward_5days.nc')
-    fig = plt.figure()
-    for File in Files:
-        figname = 'figures/' + File.split('/')[-1].split('.')[0] + '.png'
-        if not os.path.exists(figname):
-            d = netCDF.Dataset(File)
-            ax = plt.axes(projection=ccrs.Mercator(central_longitude=-85.0))
-            gl = ax.gridlines(linewidth=0.2, color='gray', alpha=0.5, linestyle='-', draw_labels=True)
-            ax.set_extent([-95.4, -94.2, 28.8, 29.9], ccrs.PlateCarree())
-            ax.coastlines(resolution='10m')  # coastline resolution options are '110m', '50m', '10m'
-            ax.plot(d['lonp'][:,0], d['latp'][:,0], 'r.', transform=ccrs.PlateCarree());
-            ax.plot(d['lonp'][:].T, d['latp'][:].T, 'k', alpha=0.5, transform=ccrs.PlateCarree());
-            fig.savefig(figname, bbox_inches='tight')
-            fig.clear()
 
 if __name__ == "__main__":
     run()
