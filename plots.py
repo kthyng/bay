@@ -1,24 +1,17 @@
 '''
-Supporting code for paper
+Plot functions for bay work.
 '''
 
+# import matplotlib as mpl
+# mpl.use('Agg')
+from datetime import datetime
 import matplotlib.pyplot as plt
 from glob import glob
 import xarray as xr
-import pandas as pd
-import numpy as np
-import matplotlib as mpl
-from matplotlib.dates import date2num
-from datetime import datetime, timedelta
-from statsmodels.formula.api import ols
-from statsmodels.stats.anova import anova_lm
-import statsmodels.api as sm
-# import statsmodels.api as sm
-# tsa = sm.tsa
-from scipy.signal import argrelextrema
 import cartopy.crs as ccrs
 import cmocean.cm as cmo
 from tracpy import op
+import seaborn as sns
 
 
 mpl.rcParams.update({'font.size': 14})
@@ -33,64 +26,7 @@ mpl.rcParams['mathtext.sf'] = 'sans'
 mpl.rcParams['mathtext.fallback_to_cm'] = 'True'
 
 
-def get_from_blended(var, start, stop, yrho=230, xrho=445):
-    '''Get some information from blended model product.
-
-    Default xr/yr location is in entrance to Galveston Bay.
-    '''
-
-    # assuming time periods are consecutive (two months in a row)
-    loc = glob('/rho/raid/dongyu/blended' + start[:4] + start[5:7] + '*.nc')
-    loc.extend(glob('/rho/raid/dongyu/blended' + stop[:4] + stop[5:7] + '*.nc'))
-    # remove nonunique values (in case all within one month)
-    d = xr.open_mfdataset(sorted(list(set(loc))), concat_dim='ocean_time')
-
-    return d[var].sel(ocean_time=slice(start, stop)).isel(yr=yrho, xr=xrho)
-
-
-def get_from_shelf(var, start, stop, xrho=274, yrho=165):
-    '''Get something from shelf model.
-
-    Default xr/yr location is in entrance to Galveston Bay.
-    '''
-
-    loc = 'http://barataria.tamu.edu:8080/thredds/dodsC/NcML/txla_hindcast_agg'
-    d = xr.open_dataset(loc)
-
-    if var == 'wind':
-        var1 = d['Uwind'].sel(ocean_time=slice(start, stop)).isel(eta_rho=yrho, xi_rho=xrho)
-        var2 = d['Vwind'].sel(ocean_time=slice(start, stop)).isel(eta_rho=yrho, xi_rho=xrho)
-        var = np.sqrt(var1**2 + var2**2)
-    elif var == 'Uwind' or var == 'Vwind':
-        var = d[var].sel(ocean_time=slice(start, stop)).isel(eta_rho=yrho, xi_rho=xrho)
-    elif var == 'sustr':
-        var = d[var].sel(ocean_time=slice(start, stop)).isel(eta_u=yrho, xi_u=xrho)
-    elif var == 'svstr':
-        var = d[var].sel(ocean_time=slice(start, stop)).isel(eta_v=yrho, xi_v=xrho)
-    # print(var)
-    return var
-
-
-def get_from_TWDB(start, stop):
-    '''Get river data.
-
-    from https://waterdatafortexas.org/coastal/sites/TRIN
-    Not using this anymore
-    '''
-
-    df = pd.read_csv('TRIN_seawater_salinity_daily.csv', comment='#', parse_dates=True, index_col=0)
-    return df[start:stop]
-
-
-def get_from_suntans(start, stop):
-    '''Get river discharge from suntans boundary file.'''
-
-    ds = xr.open_dataset('/rho/raid/dongyu/GalvCoarse_BC_' + start[:4] + '.nc')
-    ds.swap_dims({'Nt': 'time'}, inplace=True)  # so can index based on time
-    return ds['boundary_Q'].sel(time=slice(start, stop)).sum(axis=1).to_dataframe()
-
-
-def plot_conditions():
+def conditions():
     '''Plot wind, river, tide for selected time periods.'''
 
     refdates = [datetime(2010, 2, 1, 0, 0), datetime(2011, 2, 1, 0, 0)]
@@ -184,76 +120,58 @@ def plot_conditions():
     fig.savefig('figures/io/' + name + '.pdf', bbox_inches='tight')
 
 
-def stats():
-    '''Stats between drifters and forcing mechanisms.'''
+def io():
 
-    Files = glob('calcs/enterexit_sim3_*_14days_dx300.csv')
+    # df = pd.read_csv('calcs/enterexit_sim3_2010-02_forward_14days_dx300.csv', parse_dates=True, index_col=0)  # analysis of drifter tracks
+    # cols = df.filter(like='forward').columns  # list of columns
+    # number of files being used per time, as proxy for # available drifters
+    # start = '2009-05-14' # '2009-04-14'
+    # stop = '2009-06-10'  # '2009-05-10'
+    # nfiles = (~np.isnan(df[start:stop][cols])).astype(int).sum(axis='columns')
+    df = pd.read_csv('calcs/enterexit_sim3_2010-02_forward_14days_dx300.csv', parse_dates=True, index_col=0)  # analysis of drifter tracks
+    start = df.index[0].isoformat()[:10]
+    stop = df.index[-1].isoformat()[:10]
+    nfiles = (~np.isnan(df)).astype(int).sum(axis='columns')
+    loc = sorted(glob('/rho/raid/dongyu/blended*.nc'))
+    dm = xr.open_mfdataset(loc)  # blended model product
+
+    # Plot forward, high flow
+    fig, axes = plt.subplots(4, 1, figsize=(16,8), sharex=True)
+
+    # tides
+    dm['zeta'].sel(ocean_time=slice(start, stop)).isel(yr=235, xr=435).plot(ax=axes[0])
+
+    # river discharge
+    paper.get_from_suntans(start, stop)['boundary_Q'].plot(ax=axes[1])
+
+    # winds
+
+
+    # forward: drifter exiting bay?
+    df.sum(axis='columns').divide(nfiles).plot(ax=axes[3])  # sum across columns
+
+
+def tracks():
+
+    Files = glob('tracks/*_15days_*.nc')
     for File in Files:
-        # File = 'calcs/enterexit_sim3_2010-07_backward_14days_dx300.csv'
-        df = pd.read_csv(File, parse_dates=True, index_col=0)
-        nfiles = (~np.isnan(df)).astype(int).sum(axis='columns')
-        y = df.sum(axis='columns').divide(nfiles).resample('15min', base=0).interpolate()
-
-        start = df.index[0].isoformat()[:10]
-        stop = df.index[-1].isoformat()[:10]
-
-        river = get_from_suntans(start, stop).resample('15min').interpolate()['boundary_Q'][:y.index[-1].isoformat()]
-        zeta = get_from_blended('zeta', start, stop).to_dataframe().resample('15min').interpolate()['zeta'][:y.index[-1].isoformat()]
-        uwind = get_from_shelf('Uwind', start, stop).to_dataframe().resample('15min').interpolate()['Uwind'][:y.index[-1].isoformat()]
-        vwind = get_from_shelf('Vwind', start, stop).to_dataframe().resample('15min').interpolate()['Vwind'][:y.index[-1].isoformat()]
-        s = np.sqrt(uwind**2 + vwind**2)
-        theta = np.unwrap(np.arctan2(vwind, uwind))
-        sustr = get_from_shelf('sustr', start, stop).to_dataframe().resample('15min').interpolate()['sustr'][:y.index[-1].isoformat()]
-        svstr = get_from_shelf('svstr', start, stop).to_dataframe().resample('15min').interpolate()['svstr'][:y.index[-1].isoformat()]
+        figname = 'figures/' + File.split('/')[-1].split('.')[0] + '.png'
+        if not os.path.exists(figname):
+            d = netCDF.Dataset(File)
+            lonp = d['lonp'][:]; latp = d['latp'][:];
+            d.close()
+            fig = plt.figure(figsize=(12,10))
+            ax = plt.axes(projection=ccrs.Mercator(central_longitude=-85.0))
+            gl = ax.gridlines(linewidth=0.2, color='gray', alpha=0.5, linestyle='-', draw_labels=True)
+            ax.set_extent([-95.4, -94.2, 28.8, 29.9], ccrs.PlateCarree())
+            ax.coastlines(resolution='10m')  # coastline resolution options are '110m', '50m', '10m'
+            ax.plot(lonp[:,0], latp[:,0], 'r.', transform=ccrs.PlateCarree());
+            ax.plot(lonp[:].T, latp[:].T, 'k', lw=0.3, alpha=0.7, transform=ccrs.PlateCarree());
+            fig.savefig(figname, bbox_inches='tight')
+            plt.close(fig)
 
 
-        df = pd.DataFrame({'drifters':y})
-        df.index.name = 'datetime'
-        df['drifters_tidal'] = (df['drifters']-df['drifters'].rolling(192, center=True).mean())
-        df['drifters_subtidal'] = (df['drifters'].rolling(192, center=True).mean())
-        df['river'] = river
-        df['zeta'] = zeta
-        df['dzeta'] = df['zeta'].diff()  # derivative of zeta - proxy for current
-
-        df['uwind'] = uwind
-        df['vwind'] = vwind
-        df['s'] = s
-        df['theta'] = theta
-        df['dtheta'] = df['theta'].diff()  # change in wind direction
-        df['sustr'] = sustr
-        df['svstr'] = svstr
-
-        name = 'calcs/df_' + start[:7]
-        if 'forward' in File:
-            name += '_forward'
-        elif 'backward' in File:
-            name += '_backward'
-        df.to_csv(name + '.csv')  # save every time step
-    # df = pd.read_csv(name, parse_dates=True, index_col=0)
-
-    # model = ols("drifters ~ river + dzeta + uwind + vwind", df).fit()
-    # print(model.rsquared_adj, model.bic)
-    # model = ols("drifters ~ river + dzeta + sustr + svstr", df).fit()
-    # print(model.rsquared_adj, model.bic)
-    # model = ols("drifters ~ river + zeta + sustr + svstr", df).fit()
-    # print(model.rsquared_adj, model.bic)
-    # model = ols("drifters ~ river", df).fit()
-    # print(model.rsquared_adj, model.bic)
-    # model = ols("drifters ~ dzeta", df).fit()
-    # print(model.rsquared_adj, model.bic)
-    #
-    # model.fittedvalues.plot()
-    # model.resid.plot()
-    # df['drifters'].plot()
-    #
-    # df.plot(subplots=True)
-
-    #
-    # # Peform analysis of variance on fitted linear model
-    # anova_results = anova_lm(model)
-
-
-def plot_drifters():
+def drifters():
     '''Plot drifters in time from multiple simulations.'''
 
     year = '2010'
@@ -304,5 +222,12 @@ def plot_drifters():
         fig.savefig(figname, bbox_inches='tight')
         plt.close(fig)
 
-if __name__ == "__main__":
-    stats()
+
+def fit():
+    '''Plot statistical fit from calcs.stats().'''
+
+    figure()
+    model.fittedvalues.plot(color='r')
+    model.resid.plot(color='g')
+    df['drifters_tidal'].plot(color='k', linewidth=3)
+    (df['zeta_shifted']/(df['zeta_shifted'].max()/df['drifters_tidal'].max())).plot(color='m')
