@@ -5,6 +5,7 @@ Read functions for bay work.
 from glob import glob
 import xarray as xr
 import pandas as pd
+import numpy as np
 
 
 # loc = glob('/rho/raid/dongyu/blended*.nc')
