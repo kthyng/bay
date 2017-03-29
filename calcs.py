@@ -337,3 +337,7 @@ def stats(which='subtidal', direction='forward'):
     # plot(df['drifters_subtidal'][istart:iend][imax:-imax], df['theta'][istart:iend][imax:-imax], 'g.')
     # plot(df['drifters_subtidal'][istart:iend][imax:-imax], df['theta'][istart:iend][imax+imax:], 'r.')
     # plot(df['drifters_subtidal'][istart:iend][imax+imax:], df['theta'][istart:iend][imax:-imax], 'b.')
+
+
+if __name__ == "__main__":
+    make_dfs()
