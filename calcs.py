@@ -12,6 +12,7 @@ from statsmodels.stats.anova import anova_lm
 import statsmodels.api as sm
 tsa = sm.tsa
 from matplotlib.path import Path
+from datetime import datetime
 
 
 def baypath(which='ll'):
@@ -47,9 +48,9 @@ def baypath(which='ll'):
         baypathll = np.load(baypathfile)['baypathll'].item()
         baypathxy = np.load(baypathfile)['baypathxy'].item()
 
-    if which == 'll'
+    if which == 'll':
         return baypathll
-    elif which == 'xy'
+    elif which == 'xy':
         return baypathxy
 
 
@@ -137,15 +138,6 @@ def make_dfs():
         df['svstr'] = svstr
 
         # add some columns on for other analysis
-        ipos = df['dzeta'] >= 0
-        df['dzeta_floor0'] = df['dzeta'][ipos]
-
-        ccf_zeta = tsa.ccf(df['drifters_tidal'][istart:iend], df['zeta'][istart:iend])
-        imax = ccf_zeta.argmax()
-        df['zeta_shifted'] = df['zeta'].shift(imax)
-
-        ipos = df['zeta'] >= 0
-        df['zeta_floor0'] = df['zeta'][ipos]
 
         # What if river discharge is related to drifters but with a time lag?
         # istart, iend are indices in time series where subtidal signal starts and
@@ -157,11 +149,22 @@ def make_dfs():
         # with the river discharge
         imax = ccf_river.argmax()
         # this column has accounted for shift in river discharge by pushing river time forward
-        df['river_shifted'] = df['river'].shift(imax)/10.  # 10 is to get river to same order as drifters
+        df['river_shifted'] = df['river'].shift(imax)
+
 
         ccf_theta = tsa.ccf(df['drifters_subtidal'][istart:iend], df['theta'][istart:iend])
         imax = ccf_theta.argmax()
         df['theta_shifted'] = df['theta'].shift(imax)
+
+        ipos = df['dzeta'] >= 0
+        df['dzeta_floor0'] = df['dzeta'][ipos]
+
+        ccf_zeta = tsa.ccf(df['drifters_tidal'][istart:iend], df['zeta'][istart:iend])
+        imax = ccf_zeta.argmax()
+        df['zeta_shifted'] = df['zeta'].shift(imax)
+
+        ipos = df['zeta'] >= 0
+        df['zeta_floor0'] = df['zeta'][ipos]
 
         name = 'calcs/df_' + start[:7]
         if 'forward' in File:
@@ -182,37 +185,153 @@ def powerset(inlist):
     return list(itertools.chain.from_iterable(itertools.combinations(s, r) for r in range(len(s)+1)))
 
 
-def stats():
+def filter_powerset(df, which):
+    '''Find appropriate combinations of mechanisms.'''
 
-    name = 'df_2010-02_forward.csv'
-    df = pd.read_csv(name, parse_dates=True, index_col=0)
+    if which == 'subtidal':
+        # names of forcing mechanism columns
+        mechanisms = df.columns[['drifters' not in column and 'zeta' not in column for column in df.columns]]
+        combos = powerset(mechanisms)[1:]  # skip empty
+
+        # filter allowed combinations
+        iremove = list(np.where([('river' in combo and 'river_shifted' in combo) for combo in combos])[0])
+        iremove.extend(np.where([('theta' in combo and 'theta_shifted' in combo) for combo in combos])[0])
+        iremove.extend(np.where([('theta' in combo and 'dtheta' in combo) for combo in combos])[0])
+        iremove.extend(np.where([('dtheta' in combo and 'theta_shifted' in combo) for combo in combos])[0])
+        iremove.extend(np.where([('uwind' in combo and 'sustr' in combo) or ('vwind' in combo and 'svstr' in combo) for combo in combos])[0])
+        iremove.extend(np.where([('uwind' in combo and 'svstr' in combo) or ('vwind' in combo and 'sustr' in combo) for combo in combos])[0])
+        # don't want uwind/vwind and sustr+svstr together
+        iremove.extend(np.where([(('uwind' in combo or 'vwind' in combo) and ('sustr' in combo and 'svstr' in combo)) for combo in combos])[0])
+        iremove.extend(np.where([(('uwind' in combo and 'vwind' in combo) and ('sustr' in combo or 'svstr' in combo)) for combo in combos])[0])
+        iremove.extend(np.where([(('uwind' in combo or 'vwind' in combo) and ('s' in combo and 'theta' in combo)) for combo in combos])[0])
+        iremove.extend(np.where([(('uwind' in combo and 'vwind' in combo) and ('s' in combo or 'theta' in combo)) for combo in combos])[0])
+        iremove.extend(np.where([(('sustr' in combo or 'svstr' in combo) and ('s' in combo and 'theta' in combo)) for combo in combos])[0])
+        iremove.extend(np.where([(('sustr' in combo and 'svstr' in combo) and ('s' in combo or 'theta' in combo)) for combo in combos])[0])
+
+        # remove these instances
+        combos = np.delete(np.asarray(combos), list(set(iremove)))
+
+    elif which == 'tidal':
+
+        mechanisms = df.columns[['drifters' not in column and 'zeta' in column for column in df.columns]]
+        combos = powerset(mechanisms)[1:]  # skip empty
+
+        iremove = list(np.where([('dzeta' in combo and 'dzeta_floor0' in combo) for combo in combos])[0])
+        iremove.extend(np.where([('zeta' in combo and 'zeta_floor0' in combo) for combo in combos])[0])
+        iremove.extend(np.where([('zeta_shifted' in combo and 'zeta_shifted_floor0' in combo) for combo in combos])[0])
+        # remove these instances
+        combos = np.delete(np.asarray(combos), list(set(iremove)))
+
+    return combos
 
 
-    # names of forcing mechanism columns
-    # subtidal combos
-    mechanisms = df.columns[['drifters' not in column and 'zeta' not in column for column in df.columns]]
-    combos_subtidal = powerset(mechanisms)[1:]  # skip empty
-    # tidal combos
-    mechanisms = df.columns[['drifters' not in column and 'zeta' in column for column in df.columns]]
-    combos_tidal = powerset(mechanisms)[1:]  # skip empty
+def transform(df, which):
+    '''Transform forcing mechanism using outside information beyond just signal.'''
 
-    models_subtidal = []
-    for combo in combos_subtidal:
+    if 'river' in which:
+        varfull = pd.read_csv('calcs/river2009-2011.csv', parse_dates=True, index_col=0)['108.394273505']
+    elif 'uwind' in which:
+        varfull = pd.read_csv('calcs/uwind2009-2011.csv', parse_dates=True, index_col=0)['-6.20427322388']
+    elif 'vwind' in which:
+        varfull = pd.read_csv('calcs/vwind2009-2011.csv', parse_dates=True, index_col=0)['-2.68748617172']
+    elif 'sustr' in which:
+        varfull = pd.read_csv('calcs/sustr2009-2011.csv', parse_dates=True, index_col=0)['-0.0590621456504']
+    elif 'svstr' in which:
+        varfull = pd.read_csv('calcs/svstr2009-2011.csv', parse_dates=True, index_col=0)['-0.0251256525517']
+    elif which == 's':
+        varfull1 = pd.read_csv('calcs/uwind2009-2011.csv', parse_dates=True, index_col=0)['-6.20427322388']
+        varfull2 = pd.read_csv('calcs/vwind2009-2011.csv', parse_dates=True, index_col=0)['-2.68748617172']
+        varfull = np.sqrt(varfull1**2 + varfull2**2)
+    elif 'theta' in which:
+        varfull1 = pd.read_csv('calcs/uwind2009-2011.csv', parse_dates=True, index_col=0)['-6.20427322388']
+        varfull2 = pd.read_csv('calcs/vwind2009-2011.csv', parse_dates=True, index_col=0)['-2.68748617172']
+        varfull = np.unwrap(np.arctan2(varfull1, varfull2))
+    elif which == 'drifters_subtidal':
+        Files = glob('calcs/df_*.csv')
+        varfull = []
+        for File in Files:
+            varfull.extend(pd.read_csv(File, parse_dates=True, index_col=0)['drifters_subtidal'])
+        varfull = np.asarray(varfull)
 
-        # run ordinary least squares analysis on drifter column vs. combination of mechanisms
-        models_subtidal.append(ols('drifters_subtidal ~ ' + " + ".join(list(combo)), df).fit())
+    if np.isnan(varfull).sum()>0:
+        return (df[which] - np.nanmean(varfull))/np.nanstd(varfull)
+    else:
+        return (df[which] - varfull.mean())/varfull.std()
 
-    # find top 5 r^2 values
-    imaxes = [model.params.adjrsqr for model in models]
 
-    #
-    # figure()
-    # model.fittedvalues.plot(color='r')
-    # model.resid.plot(color='g')
-    # df['drifters_subtidal'].plot(color='k', linewidth=3)
-    # df['river_shifted'].plot(color='m')
-    # (df['river_shifted']/(df['river_shifted'].max()/df['drifters_subtidal'].max())).plot(color='m')
-    # (df['theta']/(df['theta'].min()/df['drifters_subtidal'].max())).plot(color='m', linestyle='--')
+def stats(which='subtidal', direction='forward'):
+    '''Calculate stats.
+
+    Maybe only do subtidal since tidal appears to have no impact on how many
+    drifters stay outside.'''
+
+    # Files = glob('calcs/df_????-??_*ward.csv')
+    Files = glob('calcs/df_????-??_' + direction + '.csv')
+    # Files = glob('calcs/df_2010-02_forward.csv')
+    for File in Files:
+        # print(File)
+        df = pd.read_csv(File, parse_dates=True, index_col=0)
+
+        # which = 'subtidal'
+        combos = filter_powerset(df, which=which)
+
+        models = []; dfscaleds = []
+        for combo in combos:
+
+            # run ordinary least squares analysis on drifter column vs. combination of mechanisms
+            # create temporary new dataframe for this loop's analysis where all
+            # variables are scaled
+            dfscaled = pd.DataFrame()
+            for item in list(combo):
+                # dfscaled[item] = (df[item] - df[item].mean())/df[item].std()
+                # print(item)
+                dfscaled[item] = transform(df, which=item)  # scale using years-long data MORE HERE
+            item = 'drifters_' + which
+            dfscaled[item] = (df[item] - df[item].mean())/df[item].std()
+            # import pdb; pdb.set_trace()
+            models.append(ols('drifters_' + which + ' ~ ' + " + ".join(list(combo)), dfscaled).fit())
+            dfscaleds.append(dfscaled)
+
+        # find top N r^2, lowest BIC values
+        N = 5
+        ir2 = np.argsort(-np.asarray([model.rsquared_adj for model in models]))[:N]
+        ibic = np.argsort(np.asarray([model.bic for model in models]))[:N]
+        indstemp = list(set(np.concatenate((ir2, ibic))))  # has to be both highest r^2 and lowest BIC
+        inds = []
+        for ind in indstemp:
+            if (models[ind].pvalues[1:]>0.1).sum() > 0:
+                pass
+            else:
+                inds.append(ind)
+
+        # fig, axes = plt.subplots(N, 1, sharex=True, figsize=(16,10))
+        # Summary
+        print('Simulation set: %s' % File)
+        print('Number of combinations checked: %i' % len(combos))
+        print('Top adjusted r^2, lowest BIC performers, no p>0.1: %i' % len(inds))
+        for i, ind in enumerate(inds):
+            model = models[ind]
+            dfscaled = dfscaleds[ind]
+            print('Adjusted r^2: %0.2f' % model.rsquared_adj)
+            print('BIC: %d' % model.bic)
+            print('coefficients: ')
+            print(model.params.to_string())
+            print('pvalues: ')
+            print(model.pvalues[1:].to_string())
+            print('')
+
+        # plot
+        # plt.figure()
+        # model.fittedvalues.plot(color='r', ax=axes[i], label='fit')
+        # model.resid.plot(color='g', ax=axes[i], label='residual')
+        # dfscaled['drifters_subtidal'].plot(ax=axes[i])
+        #     # dfscaled['drifters_' + which].plot(color='k', linewidth=3, ax=axes[i])
+        #     # for key in model.params.keys()[1:]  # skips intercept
+        #     #     dfscaled[key].plot(ax=axes[i])
+        # fig.tight_layout()
+
+
+
     #
     # figure()
     # plot(df['drifters_subtidal'][istart:iend][imax:-imax], df['theta'][istart:iend][imax:-imax], 'g.')

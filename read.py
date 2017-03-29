@@ -62,6 +62,13 @@ def from_TWDB(start, stop):
 def from_suntans(start, stop):
     '''Get river discharge from suntans boundary file.'''
 
-    ds = xr.open_dataset('/rho/raid/dongyu/GalvCoarse_BC_' + start[:4] + '.nc')
-    ds.swap_dims({'Nt': 'time'}, inplace=True)  # so can index based on time
-    return ds['boundary_Q'].sel(time=slice(start, stop)).sum(axis=1).to_dataframe()
+    # Always read in all and then remove from there. Files overlap so had to
+    # deal with specially.
+    years = np.array([2009, 2010, 2011])
+    base = '/rho/raid/dongyu/GalvCoarse_BC_'
+    river = pd.DataFrame()
+    for year in years:
+        ds = xr.open_dataset(base + str(year) + '.nc')
+        ds.swap_dims({'Nt': 'time'}, inplace=True)  # so can index based on time
+        river = river.append(ds['boundary_Q'].sel(time=slice(str(year) + '-01-01T00:00:00', str(year) + '-12-31T23:00:00')).sum(axis=1).to_dataframe())
+    return river[start:stop]
