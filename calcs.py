@@ -11,8 +11,9 @@ from statsmodels.formula.api import ols
 import statsmodels.api as sm
 tsa = sm.tsa
 from matplotlib.path import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
+import netCDF4 as netCDF
 
 
 def baypath(which='ll'):
@@ -62,7 +63,7 @@ def io():
     baypathll = baypath()
 
     basename = '_14days_dx300'
-    refdate = datetime(2010, 2, 1, 0, 0)  # datetime(2010, 7, 15, 0, 0) datetime(2010, 2, 1, 0, 0) datetime(2010, 7, 1, 0, 0)
+    refdate = datetime(2011, 2, 1, 0, 0)  # datetime(2010, 7, 15, 0, 0) datetime(2010, 2, 1, 0, 0) datetime(2010, 7, 1, 0, 0)
 
     if refdate.day == 15:
         basename = '_backward' + basename
