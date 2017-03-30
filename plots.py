@@ -219,8 +219,8 @@ def drifters():
     land_10m = cfeature.NaturalEarthFeature('physical', 'land', '10m',
                                             edgecolor='face',
                                             facecolor=cfeature.COLORS['land'])
-
-    os.makedirs('figures/' + datestr0)
+    if not os.path.exists('figures/' + datestr0):
+        os.makedirs('figures/' + datestr0)
     for date in dates:
         datestr = date.isoformat()[:13] # e.g. '2010-02-01T00'
         datestrlong = date.isoformat()  # since tracks are every 15 min, to be more specific
@@ -275,10 +275,10 @@ def drifters():
         zeta[datestr:datestr].plot(ax=axtide, marker='o', color='r', legend=False)
         axtide.get_yaxis().set_visible(False)
         axtide.get_xaxis().set_visible(False)
-        axtide.text(0.03, 0.95, 'sea surface', transform=axtide.transAxes, fontsize=12)
+        axtide.text(0.03, 0.96, 'sea surface', transform=axtide.transAxes, fontsize=12)
 
         # river discharge
-        axriver = fig.add_axes([0.14, 0.52, .27, 0.08], frameon=False)#, transform=ax.transAxes)
+        axriver = fig.add_axes([0.14, 0.53, .27, 0.08], frameon=False)#, transform=ax.transAxes)
         river.plot(ax=axriver, color='k', legend=False, linewidth=1.5)
         river[datestr:datestr].plot(ax=axriver, marker='o', color='r', legend=False)
         axriver.get_yaxis().set_visible(False)
@@ -298,7 +298,7 @@ def drifters():
                        headaxislength=0, headlength=0, width=1.0, units='y', scale_units='y', scale=1)
         axwind.get_yaxis().set_visible(False)
         axwind.get_xaxis().set_visible(False)
-        axwind.text(0.03, 0.95, 'wind', transform=axwind.transAxes, fontsize=12)
+        axwind.text(0.03, 0.96, 'wind', transform=axwind.transAxes, fontsize=12)
         axwind.set_ylim(wmin, wmax)  # to compare with other months
         axwind.set_xlim([doy.min(), doy.max()])
 
