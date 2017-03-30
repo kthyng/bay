@@ -8,11 +8,11 @@ import read
 import itertools
 import numpy as np
 from statsmodels.formula.api import ols
-from statsmodels.stats.anova import anova_lm
 import statsmodels.api as sm
 tsa = sm.tsa
 from matplotlib.path import Path
 from datetime import datetime
+import os
 
 
 def baypath(which='ll'):
@@ -45,8 +45,8 @@ def baypath(which='ll'):
         baypathll = Path(newvll)
         np.savez(baypathfile, baypathxy=baypathxy, baypathll=baypathll)
     else:
-        baypathll = np.load(baypathfile)['baypathll'].item()
-        baypathxy = np.load(baypathfile)['baypathxy'].item()
+        baypathll = np.load(baypathfile, encoding='latin1')['baypathll'].item()
+        baypathxy = np.load(baypathfile, encoding='latin1')['baypathxy'].item()
 
     if which == 'll':
         return baypathll
@@ -62,7 +62,7 @@ def io():
     baypathll = baypath()
 
     basename = '_14days_dx300'
-    refdate = datetime(2011, 2, 15, 0, 0)  # datetime(2010, 7, 15, 0, 0) datetime(2010, 2, 1, 0, 0) datetime(2010, 7, 1, 0, 0)
+    refdate = datetime(2010, 2, 1, 0, 0)  # datetime(2010, 7, 15, 0, 0) datetime(2010, 2, 1, 0, 0) datetime(2010, 7, 1, 0, 0)
 
     if refdate.day == 15:
         basename = '_backward' + basename
@@ -88,6 +88,10 @@ def io():
         # points that are outside of bay
         inds = baypathll.contains_points(np.vstack([lonp.flatten(), latp.flatten()]).T).reshape(lonp.shape)
 
+        # save indices of drifters that exit bay
+        exitinfo = np.where(inds)  # tuple: [time, drifter index] for drifter outside bay
+        idrifters = set(exitinfo[0])  # indices of drifters that are outside bay at some point (overall)
+
         numexit = inds.sum(axis=0)  # number of drifter outside of bay by time
         # add column to dataframe with this information
         simstartdate = File.split('/')[-1].split('14days')[0][:-1]
@@ -96,6 +100,7 @@ def io():
         df = df.join(dftemp)  # add column to dataframe
 
         df.to_csv('calcs/enterexit_sim3_' + start.isoformat()[:7] + basename + '.csv')  # save every time step
+        np.savez('calcs/enterexit_sim3_' + simstartdate[:13] + basename + '.npz', idrifters=idrifters, exitinfo=exitinfo)
 
 
 def make_dfs():
@@ -151,6 +156,10 @@ def make_dfs():
         # this column has accounted for shift in river discharge by pushing river time forward
         df['river_shifted'] = df['river'].shift(imax)
 
+        # found no correlation shift for feb 2010
+        # ccf_uwind = tsa.ccf(df['drifters_subtidal'][istart:iend], df['uwind'][istart:iend])
+        # imax = ccf_uwind.argmax()
+        # df['uwind_shifted'] = df['uwind'].shift(imax)
 
         ccf_theta = tsa.ccf(df['drifters_subtidal'][istart:iend], df['theta'][istart:iend])
         imax = ccf_theta.argmax()
@@ -259,6 +268,18 @@ def transform(df, which):
         return (df[which] - varfull.mean())/varfull.std()
 
 
+def scaled(df, combo, which='subtidal'):
+    '''Wrapper to create scaled version of dataframe with desired columns.'''
+
+    dfscaled = pd.DataFrame()
+    for item in list(combo):
+        dfscaled[item] = transform(df, which=item)  # scale using years-long data
+    item = 'drifters_' + which
+    dfscaled[item] = (df[item] - df[item].mean())/df[item].std()
+
+    return dfscaled
+
+
 def stats(which='subtidal', direction='forward'):
     '''Calculate stats.
 
@@ -281,28 +302,24 @@ def stats(which='subtidal', direction='forward'):
             # run ordinary least squares analysis on drifter column vs. combination of mechanisms
             # create temporary new dataframe for this loop's analysis where all
             # variables are scaled
-            dfscaled = pd.DataFrame()
-            for item in list(combo):
-                # dfscaled[item] = (df[item] - df[item].mean())/df[item].std()
-                # print(item)
-                dfscaled[item] = transform(df, which=item)  # scale using years-long data MORE HERE
-            item = 'drifters_' + which
-            dfscaled[item] = (df[item] - df[item].mean())/df[item].std()
+            dfscaled = scaled(df, combo)
             # import pdb; pdb.set_trace()
             models.append(ols('drifters_' + which + ' ~ ' + " + ".join(list(combo)), dfscaled).fit())
             dfscaleds.append(dfscaled)
 
         # find top N r^2, lowest BIC values
-        N = 5
+        N = 50
         ir2 = np.argsort(-np.asarray([model.rsquared_adj for model in models]))[:N]
         ibic = np.argsort(np.asarray([model.bic for model in models]))[:N]
-        indstemp = list(set(np.concatenate((ir2, ibic))))  # has to be both highest r^2 and lowest BIC
+        # indstemp = list(set(np.concatenate((ir2, ibic))))  # has to be both highest r^2 and lowest BIC
         inds = []
-        for ind in indstemp:
-            if (models[ind].pvalues[1:]>0.1).sum() > 0:
+        for ind in ir2:
+            if (models[ind].pvalues[1:]>0.1).sum() > 0 or models[ind].bic < 0:
                 pass
             else:
                 inds.append(ind)
+        if len(inds) > 5:
+            inds = inds[:5]
 
         # fig, axes = plt.subplots(N, 1, sharex=True, figsize=(16,10))
         # Summary
@@ -340,4 +357,4 @@ def stats(which='subtidal', direction='forward'):
 
 
 if __name__ == "__main__":
-    make_dfs()
+    io()
