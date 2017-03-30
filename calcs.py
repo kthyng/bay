@@ -100,8 +100,8 @@ def io():
         dftemp = pd.DataFrame(index=netCDF.num2date(tp, 'seconds since 1970-01-01  00:00:00'), data={simstartdate: numexit})
         df = df.join(dftemp)  # add column to dataframe
 
-        df.to_csv('calcs/enterexit_sim3_' + start.isoformat()[:7] + basename + '.csv')  # save every time step
-        np.savez('calcs/enterexit_sim3_' + simstartdate[:13] + basename + '.npz', idrifters=idrifters, exitinfo=exitinfo)
+        df.to_csv('calcs/enterexit/enterexit_sim3_' + start.isoformat()[:7] + basename + '.csv')  # save every time step
+        np.savez('calcs/enterexit/enterexit_sim3_' + simstartdate[:13] + basename + '.npz', idrifters=idrifters, exitinfo=exitinfo)
 
 
 def make_dfs():
