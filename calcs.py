@@ -324,6 +324,7 @@ def stats(which='subtidal', direction='forward'):
 
         # fig, axes = plt.subplots(N, 1, sharex=True, figsize=(16,10))
         # Summary
+        print('')
         print('Simulation set: %s' % File)
         print('Number of combinations checked: %i' % len(combos))
         print('Top adjusted r^2, lowest BIC performers, no p>0.1: %i' % len(inds))
