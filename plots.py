@@ -174,10 +174,11 @@ def drifters():
     '''Plot drifters in time from multiple simulations.'''
 
     year = '2010'
-    month = '02'
+    month = '07'
 
     # model output
-    m = xr.open_dataset('/rho/raid/dongyu/blended' + year + month + '.nc')
+    m = xr.open_dataset('/rho/raid/dongyu/superposition/blended' + year + month + '.nc')
+    # m = xr.open_dataset('/rho/raid/dongyu/blended' + year + month + '.nc')
     dates = m['ocean_time'].to_pandas().dt.to_pydatetime()
     lon = m['lon'].isel(xr=slice(1,-1), yr=slice(1,-1)).data
     lat = m['lat'].isel(xr=slice(1,-1), yr=slice(1,-1)).data
@@ -201,8 +202,13 @@ def drifters():
     # surface speed max
     smax = 1.2
 
+    # load in drifter data. Later normalize here.
+    df = pd.read_csv('calcs/df_2010-07_forward_superposition.csv',
+                     parse_dates=True, index_col=0)
+
     dss = []  # forward moving drifter sims
-    dsbase = '_forward_14days_dx300'
+    dss2 = []  # drifters that stay outside bay
+    dsbase = '_forward_superposition'  # '_forward_14days_dx300'
     dsfiles = glob('tracks/' + year + '-' + month + '*' + dsbase + '.nc')
     # # name of drifter file that has starting date of date
     # fname = dffiles[np.where([datestr in dffiles[i] for i in range(len(dffiles))])[0][0]]
@@ -210,10 +216,19 @@ def drifters():
         dstemp = xr.open_dataset(dsfile)
         dstemp['tp'] = (('nt'), dstemp['tp'].isel(ntrac=0))  # change tp to 1d
         dstemp = dstemp.swap_dims({'nt': 'tp'})  # so that can index off tp
-        # choose only drifters that enter/exit domain with df['lonp'].sel(tp=datestr).isel(ntrac=[1,100])
-        File = 'calcs/enterexit/enterexit_sim3_' + dsfile.split('/')[1][:13] + '_forward_14days_dx300.npz'
-        idrifters = list(np.load(File)['idrifters'].item())
+        # choose only drifters that enter/exit domain
+        File = 'calcs/enterexit/enterexit_' + dsfile.split('/')[1][:13] + '_forward_superposition.npz'
+        # File = 'calcs/enterexit/enterexit_sim3_' + dsfile.split('/')[1][:13] + '_forward_14days_dx300.npz'
+        d = np.load(File)
+        # import pdb; pdb.set_trace()
+        idrifters = list(d['idrifters'].item())
+        # etimes, edrifters = d['exitinfo']
+        # [exitinfo[0]]
+        # tmax = d['exitinfo'][0].max()
+        # idrifters2 = d['exitinfo'][1][np.where(d['exitinfo'][0] == tmax)[0]]
         dss.append(dstemp.isel(ntrac=idrifters))
+        # # separate out the two sets of drifters so they don't overlap
+        # dss2.append(dstemp.isel(ntrac=idrifters2))  # are outside bay at end of sim time
 
     import cartopy.feature as cfeature
     land_10m = cfeature.NaturalEarthFeature('physical', 'land', '10m',
@@ -226,28 +241,25 @@ def drifters():
         datestrlong = date.isoformat()  # since tracks are every 15 min, to be more specific
         datestrlong2 = (date+timedelta(seconds=1)).isoformat()  # since tracks are every 15 min, to be more specific
         datenice = date.strftime('%b %d, %Y %H:%M')
-        figname = 'figures/' + datestr0 + '/' + datestr + '.png'
+        figname = 'figures/' + datestr0 + '_superposition/' + datestr + '.png'
+        if os.path.exists(figname):
+            continue
 
         # start plot
-        fig = plt.figure(figsize=(9.5, 10))
-        ax = plt.axes(projection=ccrs.Mercator(central_longitude=-85.0))
+        fig = plt.figure(figsize=(9.4, 8.5))
+        ax = fig.add_axes([0.04, 0.04, 1, 0.95], projection=ccrs.Mercator(central_longitude=-85.0))
         gl = ax.gridlines(linewidth=0.2, color='gray', alpha=0.5, linestyle='-', draw_labels=True)
         # the following two make the labels look like lat/lon format
         gl.xformatter = LONGITUDE_FORMATTER
         gl.yformatter = LATITUDE_FORMATTER
-        # gl.xlocator = mticker.FixedLocator([-105, -95, -85, -75, -65])  # control where the ticks are
-        # gl.xlabel_style = {'size': 15, 'color': 'gray'}  # control how the tick labels look
-        # gl.ylabel_style = {'color': 'red', 'weight': 'bold'}
         gl.xlabels_top = False  # turn off labels where you don't want them
         gl.ylabels_right = False
-
         ax.set_extent([-95.42, -94.4, 28.95, 29.8], ccrs.PlateCarree())
-        # ax.coastlines(resolution='10m')  # coastline resolution options are '110m', '50m', '10m'
+        ax.add_feature(land_10m, facecolor='0.9')
 
         # plot model output
         u = op.resize(m['u'].sel(ocean_time=datestr).isel(yr=slice(1,-1)).data, 1)
         v = op.resize(m['v'].sel(ocean_time=datestr).isel(xr=slice(1,-1)).data, 0)
-        # salt = m['salt'].sel(ocean_time=datestr).isel(yr=slice(1,-1), xr=slice(1,-1), s_rho=-1).data
         s = np.sqrt(u**2 + v**2)
         mappable = ax.pcolormesh(lon, lat, s, cmap=cmo.speed, transform=ccrs.PlateCarree(), vmin=0, vmax=smax)
         # lower resolution part
@@ -258,62 +270,87 @@ def drifters():
         Q = ax.quiver(lon[144::dd,::dd], lat[144::dd,::dd],
                   u[144::dd,::dd], v[144::dd,::dd], scale=15,
                   color='k', transform=ccrs.PlateCarree(), pivot='middle')
-        qk = ax.quiverkey(Q, 0.15, 0.25, 0.5, r'0.5 m$\cdot$s$^{-1}$ current', labelcolor='k', fontproperties={'size': '10'})
-
-        ax.add_feature(land_10m, facecolor='0.9')
+        qk = ax.quiverkey(Q, 0.12, 0.1, 0.5, r'0.5 m$\cdot$s$^{-1}$ current', labelcolor='k', fontproperties={'size': '10'})
 
         # colorbar
-        cax = fig.add_axes([0.15, 0.8, .25, 0.02])
+        cax = fig.add_axes([0.125, 0.95, .25, 0.03])
         cb = fig.colorbar(mappable, cax=cax, orientation='horizontal')#, pad=0.1)
         cb.ax.tick_params(labelsize=12, length=2, color='k', labelcolor='k')
         cb.set_ticks(np.arange(0, 1.4, 0.2))
         cb.set_label(r'Surface speed [m$\cdot$s$^{-1}$]', fontsize=12, color='k')
 
         # tide signal
-        axtide = fig.add_axes([0.14, 0.62, .27, 0.08], frameon=False)#, transform=ax.transAxes)
+        axtide = fig.add_axes([0.1, 0.78, .3, 0.08], frameon=False)#, transform=ax.transAxes)
         zeta.plot(ax=axtide, color='k', legend=False, linewidth=1.5)
         zeta[datestr:datestr].plot(ax=axtide, marker='o', color='r', legend=False)
         axtide.get_yaxis().set_visible(False)
         axtide.get_xaxis().set_visible(False)
-        axtide.text(0.03, 0.96, 'sea surface', transform=axtide.transAxes, fontsize=12)
+        axtide.axis('tight')
+        axtide.text(0.12, -0.3, 'sea surface', transform=axtide.transAxes, fontsize=12)
 
         # river discharge
-        axriver = fig.add_axes([0.14, 0.53, .27, 0.08], frameon=False)#, transform=ax.transAxes)
-        river.plot(ax=axriver, color='k', legend=False, linewidth=1.5)
-        river[datestr:datestr].plot(ax=axriver, marker='o', color='r', legend=False)
+        # first, plot river compared to other years in gray
+        axriver = fig.add_axes([0.1, 0.65, .3, 0.08], frameon=False)
+        axriver.plot(river.index, river, color='0.5', linewidth=2.5, alpha=0.4)
         axriver.get_yaxis().set_visible(False)
         axriver.get_xaxis().set_visible(False)
-        axriver.text(0.03, 0.95, 'river', transform=axriver.transAxes, fontsize=12)
         axriver.set_ylim(rmin, rmax)  # to compare with other months
-        # axriver.axis('tight')
+        # second, plot river on its own so it's more visible. But overlaid on same axes location.
+        axriver2 = axriver.twinx()
+        axriver2.plot(river.index, river, color='k', linewidth=1.5)
+        axriver2.fill_between(river[:datestrlong].index, river[:datestrlong], color='0.3', alpha=0.7)
+        axriver2.fill_between(river[datestrlong:datestrlong].index, river[datestrlong:datestrlong], color='r', linewidth=1)
+        axriver2.get_yaxis().set_visible(False)
+        axriver2.get_xaxis().set_visible(False)
+        axriver2.axis('tight')
+        axriver2.text(0.12, -0.3, 'river', transform=axriver2.transAxes, fontsize=12)
+        axriver2.text(0.3, -0.3, 'compared to other years', transform=axriver2.transAxes, fontsize=11, color='0.5')
 
         # wind time series
         doy = uwind.index.dayofyear + uwind.index.hour/24. + uwind.index.minute/3600.
         uwindtemp = pd.DataFrame(uwind)[datestr:datestr]  # need it to be a dataframe not series for next line indexing
         doynow = uwindtemp.index.dayofyear + uwindtemp.index.hour/24. + uwindtemp.index.minute/3600.
-        axwind = fig.add_axes([0.14, 0.41, .27, 0.1], frameon=False)#, transform=ax.transAxes)
+        axwind = fig.add_axes([0.1, 0.5, .3, 0.1], frameon=False)#, transform=ax.transAxes)
         axwind.quiver(doy, np.zeros(len(doy)), uwind, vwind, color='k',
                        headaxislength=0, headlength=0, width=0.1, units='y', scale_units='y', scale=1)
         axwind.quiver(doynow, 0, uwind[datestr], vwind[datestr], color='r',
                        headaxislength=0, headlength=0, width=1.0, units='y', scale_units='y', scale=1)
         axwind.get_yaxis().set_visible(False)
         axwind.get_xaxis().set_visible(False)
-        axwind.text(0.03, 0.96, 'wind', transform=axwind.transAxes, fontsize=12)
+        axwind.text(0.12, -0.3, 'wind', transform=axwind.transAxes, fontsize=12)
         axwind.set_ylim(wmin, wmax)  # to compare with other months
         axwind.set_xlim([doy.min(), doy.max()])
 
+        # plot drifter signal
+        axdrifters = fig.add_axes([0.1, 0.35, .3, 0.1], frameon=False)#, transform=ax.transAxes)
+        axdrifters.plot(df.index, df['drifters'], color='k', linewidth=1.0)
+        axdrifters.fill_between(df[:datestrlong].index, df[:datestrlong]['drifters'], color='0.3', alpha=0.7)
+        axdrifters.fill_between(df[datestrlong:datestrlong].index, df[datestrlong:datestrlong]['drifters'], color='r', linewidth=1)
+        axdrifters.get_yaxis().set_visible(False)
+        axdrifters.get_xaxis().set_visible(False)
+        axdrifters.text(0.12, -0.3, 'drifters exiting', transform=axdrifters.transAxes, fontsize=12)
+        # axdrifters.set_ylim(wmin, wmax)  # to compare with other months
+        axdrifters.axis('tight')
+        axdrifters.autoscale(enable=True, axis='x', tight=True)
+
         # plot time
-        fig.text(0.15, 0.375, datenice, transform=fig.transFigure, fontsize=14)
+        ax.text(-95.399, 29.1, datenice, transform=ccrs.PlateCarree(), fontsize=14)
 
         # plot drifters
+        # for ds, ds2 in zip(dss, dss2):
         for ds in dss:
             try:  # drifter files are available every 4 hours not hourly
                 ds = ds.sel(tp=slice(datestrlong,datestrlong2))
-                ax.plot(ds['lonp'], ds['latp'], 'o', color='#782277', markersize=5, alpha=0.7, transform=ccrs.PlateCarree());
+                # ds2 = ds2.sel(tp=slice(datestrlong,datestrlong2))
+                ax.plot(ds['lonp'], ds['latp'], 'o', color='#782277',
+                        markersize=7, alpha=0.7, transform=ccrs.PlateCarree());
+                # ax.plot(ds2['lonp'], ds2['latp'], 'o', color='#782277',
+                #         markersize=7, alpha=0.7, transform=ccrs.PlateCarree(),
+                #         markeredgecolor='k', markeredgewidth=1.0);
             except:
                 # print(ds.tp[0])
                 continue
-        fig.savefig(figname, bbox_inches='tight')
+        fig.savefig(figname, bbox_inches='tight', dpi=120)
         plt.close(fig)
 
 

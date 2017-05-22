@@ -62,8 +62,8 @@ def io():
 
     baypathll = baypath()
 
-    basename = '_14days_dx300'
-    refdate = datetime(2011, 2, 1, 0, 0)  # datetime(2010, 7, 15, 0, 0) datetime(2010, 2, 1, 0, 0) datetime(2010, 7, 1, 0, 0)
+    basename = '_superposition'  # '_14days_dx300'
+    refdate = datetime(2010, 7, 15, 0, 0)  # datetime(2010, 7, 15, 0, 0) datetime(2010, 2, 1, 0, 0) datetime(2010, 7, 1, 0, 0)
 
     if refdate.day == 15:
         basename = '_backward' + basename
@@ -100,14 +100,15 @@ def io():
         dftemp = pd.DataFrame(index=netCDF.num2date(tp, 'seconds since 1970-01-01  00:00:00'), data={simstartdate: numexit})
         df = df.join(dftemp)  # add column to dataframe
 
-        df.to_csv('calcs/enterexit/enterexit_sim3_' + start.isoformat()[:7] + basename + '.csv')  # save every time step
-        np.savez('calcs/enterexit/enterexit_sim3_' + simstartdate[:13] + basename + '.npz', idrifters=idrifters, exitinfo=exitinfo)
+        df.to_csv('calcs/enterexit/enterexit_' + start.isoformat()[:7] + basename + '.csv')  # save every time step
+        # the following is for plotting drifters that exit domain
+        np.savez('calcs/enterexit/enterexit_' + simstartdate[:13] + basename + '.npz', idrifters=idrifters, exitinfo=exitinfo)
 
 
 def make_dfs():
     '''Make dataframes between drifters and forcing mechanisms for running stats.'''
 
-    Files = glob('calcs/enterexit_sim3_*_14days_dx300.csv')
+    Files = glob('calcs/enterexit/enterexit_*_superposition.csv')
     for File in Files:
         # File = 'calcs/enterexit_sim3_2010-07_backward_14days_dx300.csv'
         df = pd.read_csv(File, parse_dates=True, index_col=0)
@@ -178,9 +179,9 @@ def make_dfs():
 
         name = 'calcs/df_' + start[:7]
         if 'forward' in File:
-            name += '_forward'
+            name += '_forward_superposition'
         elif 'backward' in File:
-            name += '_backward'
+            name += '_backward_superposition'
         df.to_csv(name + '.csv')  # save every time step
 
 

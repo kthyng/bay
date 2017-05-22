@@ -15,7 +15,8 @@ import cartopy
 import cartopy.crs as ccrs
 import xarray as xr
 
-loc = sorted(glob('/rho/raid/dongyu/blended*.nc'))
+# loc = sorted(glob('/rho/raid/dongyu/blended*.nc'))
+loc = sorted(glob('/rho/raid/dongyu/superposition/blended*.nc'))
 
 def check_tides(date, ff):
     '''Check tidal cycle for starting date and following 2 weeks.'''
@@ -100,17 +101,9 @@ def init(name, ff):
         # lon0, lat0 in projected coordinates
         x0, y0 = grid.proj(lon0, lat0)
 
-        # use pts in projected space OUTSIDE of the coastpath I clicked out before
-        outerpathxy = np.load('../shelf_transport/calcs/coastpaths.npz')['outerpathxy'].item()
-
-        # remove points outside the path
-        ov = outerpathxy.vertices
-        xpath = np.hstack((ov[0:300,0], ov[300,0], ov[0,0], ov[0,0]))
-        ypath = np.hstack((ov[0:300,1], 390, 390, ov[0,1]))
-        newv = np.vstack((xpath, ypath)).T
-        newpath = Path(newv)
+        baypathxy = calcs.baypath(which='xy')
         # points that are in the bay (outside of shelf)
-        inds = ~newpath.contains_points(np.vstack([x0.flatten(), y0.flatten()]).T).reshape(x0.shape)
+        inds = ~baypathxy.contains_points(np.vstack([x0.flatten(), y0.flatten()]).T).reshape(x0.shape)
 
         # remove shelf points
         x0 = x0[inds]; y0 = y0[inds]
@@ -143,22 +136,22 @@ def init(name, ff):
 
 def run():
 
-    ffs = [-1]  # forward and backward moving simulations
+    ffs = [1, -1]  # forward and backward moving simulations
     # to keep consistent between sims
-    refdates = [datetime(2011, 7, 1, 0, 0)]
-    # refdates = [datetime(2010, 7, 1, 0, 0)]#,
-                # datetime(2011, 2, 1, 0, 0), datetime(2011, 7, 1, 0, 0)]
+    refdates = [datetime(2010, 7, 1, 0, 0)]
+    # refdates = [datetime(2010, 2, 1, 0, 0), datetime(2010, 7, 1, 0, 0),
+    #             datetime(2011, 2, 1, 0, 0), datetime(2011, 7, 1, 0, 0)]
 
     for refdate in refdates:
         for ff in ffs:
             if ff == 1:
                 overallstartdate = refdate
                 overallstopdate = overallstartdate + timedelta(days=14)
-                basename = '_forward_14days_dx300'
+                basename = '_forward_superposition'
             elif ff == -1:
                 overallstartdate = refdate + timedelta(days=14)
                 overallstopdate = overallstartdate + timedelta(days=14)
-                basename = '_backward_14days_dx300'
+                basename = '_backward_superposition'
 
             date = overallstartdate
 
