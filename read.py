@@ -39,7 +39,7 @@ def from_shelf(var, start, stop, xrho=274, yrho=165):
         var1 = d['Uwind'].sel(ocean_time=slice(start, stop)).isel(eta_rho=yrho, xi_rho=xrho)
         var2 = d['Vwind'].sel(ocean_time=slice(start, stop)).isel(eta_rho=yrho, xi_rho=xrho)
         var = np.sqrt(var1**2 + var2**2)
-    elif var == 'Uwind' or var == 'Vwind':
+    elif var == 'Uwind' or var == 'Vwind' or var == 'salt':
         var = d[var].sel(ocean_time=slice(start, stop)).isel(eta_rho=yrho, xi_rho=xrho)
     elif var == 'sustr':
         var = d[var].sel(ocean_time=slice(start, stop)).isel(eta_u=yrho, xi_u=xrho)
