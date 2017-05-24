@@ -1,5 +1,5 @@
 import matplotlib as mpl
-mpl.use('Agg')
+# mpl.use('Agg')
 import tracpy
 import tracpy.calcs
 from tracpy.tracpy_class import Tracpy
@@ -16,7 +16,9 @@ import cartopy.crs as ccrs
 import xarray as xr
 
 # loc = sorted(glob('/rho/raid/dongyu/blended*.nc'))
-loc = sorted(glob('/rho/raid/dongyu/superposition/blended*.nc'))
+# loc = sorted(glob('/rho/raid/dongyu/superposition/blended*.nc'))
+# loc = '/rho/raid/dongyu/201007_new/blended201007.nc'  # new bay model output
+loc = '/rho/raid/dongyu/superposition/blended201007.nc'  # new superposition
 
 def check_tides(date, ff):
     '''Check tidal cycle for starting date and following 2 weeks.'''
@@ -74,7 +76,7 @@ def init(name, ff):
 
     grid_filename = 'blended_grid.nc'
 
-    proj = tracpy.tools.make_proj(setup='nwgom')
+    proj = tracpy.tools.make_proj(setup='nwgom-pyproj')
 
     # Read in grid
     grid = tracpy.inout.readgrid(grid_filename, proj,
@@ -136,7 +138,7 @@ def init(name, ff):
 
 def run():
 
-    ffs = [1, -1]  # forward and backward moving simulations
+    ffs = [1]  # [1, -1]  # forward and backward moving simulations
     # to keep consistent between sims
     refdates = [datetime(2010, 7, 1, 0, 0)]
     # refdates = [datetime(2010, 2, 1, 0, 0), datetime(2010, 7, 1, 0, 0),
@@ -147,11 +149,11 @@ def run():
             if ff == 1:
                 overallstartdate = refdate
                 overallstopdate = overallstartdate + timedelta(days=14)
-                basename = '_forward_superposition'
+                basename = '_forward'
             elif ff == -1:
                 overallstartdate = refdate + timedelta(days=14)
                 overallstopdate = overallstartdate + timedelta(days=14)
-                basename = '_backward_superposition'
+                basename = '_backward'
 
             date = overallstartdate
 
@@ -159,7 +161,7 @@ def run():
             # keep running until we hit the next month
             while date < overallstopdate:
 
-                name = date.isoformat()[0:13] + basename
+                name = 'newsuperposition/' + date.isoformat()[0:13] + basename
 
                 # If the particle trajectories have not been run, run them
                 if not os.path.exists('tracks/' + name + '.nc') and \
