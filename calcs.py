@@ -26,12 +26,11 @@ def baypath(which='ll'):
     # from init()
     if not os.path.exists(baypathfile):
         grid_filename = 'blended_grid.nc'
+        import tracpy
         proj = tracpy.tools.make_proj(setup='nwgom')
 
         # Read in grid
-        grid = tracpy.inout.readgrid(grid_filename, proj,
-                                     vert_filename=loc[0],
-                                     usespherical=True)
+        grid = tracpy.inout.readgrid(grid_filename, proj, usespherical=True)
         # use pts in projected space OUTSIDE of the coastpath I clicked out before
         outerpathxy = np.load('../shelf_transport/calcs/coastpaths.npz')['outerpathxy'].item()
 

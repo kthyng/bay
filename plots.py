@@ -15,7 +15,6 @@ import seaborn as sns
 import matplotlib as mpl
 import pandas as pd
 import numpy as np
-from tracpy import op
 import os
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import matplotlib.ticker as mticker
@@ -31,6 +30,49 @@ mpl.rcParams['mathtext.it'] = 'sans:italic'
 mpl.rcParams['mathtext.bf'] = 'sans:bold'
 mpl.rcParams['mathtext.sf'] = 'sans'
 mpl.rcParams['mathtext.fallback_to_cm'] = 'True'
+
+import cartopy.feature as cfeature
+land_10m = cfeature.NaturalEarthFeature('physical', 'land', '10m',
+                                        edgecolor='face',
+                                        facecolor=cfeature.COLORS['land'])
+
+def resize(A, dim):
+    """
+    Average neighboring elements in an array A along a dimension dim.
+
+    Args:
+        A (array): array size, [m x n] in 2D case. Can be up to 3D.
+        dim (int): dimension on which to act. Can be up to 2 (0, 1, 2).
+
+    Returns:
+        * A - array of size [(m-1) x n] if dim is 0
+    """
+
+    # B is A but rolled such that the dimension that is to be resized is in
+    # the 0 position
+    B = np.rollaxis(A, dim)
+
+    # Do averaging
+    B = 0.5*(B[0:-1]+B[1:])
+
+    # Roll back to original
+    return np.rollaxis(B, 0, dim+1)
+
+
+def setup():
+
+    fig = plt.figure(figsize=(9.4, 8.5))
+    ax = fig.add_axes([0.04, 0.04, 1, 0.95], projection=ccrs.Mercator(central_longitude=-85.0))
+    gl = ax.gridlines(linewidth=0.2, color='gray', alpha=0.5, linestyle='-', draw_labels=True)
+    # the following two make the labels look like lat/lon format
+    gl.xformatter = LONGITUDE_FORMATTER
+    gl.yformatter = LATITUDE_FORMATTER
+    gl.xlabels_top = False  # turn off labels where you don't want them
+    gl.ylabels_right = False
+    ax.set_extent([-95.42, -94.4, 28.95, 29.8], ccrs.PlateCarree())
+    ax.add_feature(land_10m, facecolor='0.9')
+
+    return fig, ax
 
 
 def conditions(season, direction='forward'):
@@ -173,18 +215,40 @@ def tracks():
 def drifters():
     '''Plot drifters in time from multiple simulations.'''
 
+    # VORTICITY
+    # RUN DRIFTER ANALYSIS FIRST
+
     year = '2010'
     month = '07'
+    plotdriftersum = False  # add sum of drifter exits in time
+    name = 'newbay'
 
     # model output
-    m = xr.open_dataset('/rho/raid/dongyu/superposition/blended' + year + month + '.nc')
+    m = xr.open_dataset('/rho/raid/dongyu/201007_new/blended201007.nc')  # new bay
+    # m = xr.open_dataset('/rho/raid/dongyu/superposition/blended' + year + month + '.nc')
     # m = xr.open_dataset('/rho/raid/dongyu/blended' + year + month + '.nc')
+
     dates = m['ocean_time'].to_pandas().dt.to_pydatetime()
     lon = m['lon'].isel(xr=slice(1,-1), yr=slice(1,-1)).data
     lat = m['lat'].isel(xr=slice(1,-1), yr=slice(1,-1)).data
     dd = 8  # quiver
     datestr0 = dates[0].isoformat()[:13]  # starting date
     datestr1 = dates[-1].isoformat()[:13]  # ending date
+
+    # calculate grid metrics
+    from pyproj import Proj
+    import pdb; pdb.set_trace()
+    lon = m['lon'].data
+    lat = m['lat'].data
+    inputs = {'proj': 'lcc', 'ellps': 'clrk66', 'datum': 'NAD27',
+              'lat_1': 22.5, 'lat_2': 31.0, 'lat_0': 30, 'lon_0': -94,
+              'x_0': 0, 'y_0': 0}
+    proj = Proj(**inputs)
+    x, y = proj(lon, lat)
+    pm = 1./(x[:, 1:] - x[:, :-1])
+    pm = resize(pm[:, 1:-1], 0)
+    pn = 1./(y[1:, :] - y[:-1, :])
+    pn = resize(pn[1:-1, :], 1)
 
     # load previously-saved mechanism time series
     # hourly, for this time frame
@@ -199,12 +263,13 @@ def drifters():
     rmin = river.min()
     rmax = river.max()
     river = river[datestr0:datestr1].resample('60T').interpolate()
-    # surface speed max
-    smax = 1.2
+    # variable max
+    vmax = 0.1
 
-    # load in drifter data. Later normalize here.
-    df = pd.read_csv('calcs/df_2010-07_forward_superposition.csv',
-                     parse_dates=True, index_col=0)
+    if plotdriftersum:
+        # load in drifter data. Later normalize here.
+        df = pd.read_csv('calcs/df_2010-07_forward_superposition.csv',
+                         parse_dates=True, index_col=0)
 
     dss = []  # forward moving drifter sims
     dss2 = []  # drifters that stay outside bay
@@ -230,38 +295,38 @@ def drifters():
         # # separate out the two sets of drifters so they don't overlap
         # dss2.append(dstemp.isel(ntrac=idrifters2))  # are outside bay at end of sim time
 
-    import cartopy.feature as cfeature
-    land_10m = cfeature.NaturalEarthFeature('physical', 'land', '10m',
-                                            edgecolor='face',
-                                            facecolor=cfeature.COLORS['land'])
-    if not os.path.exists('figures/' + datestr0):
-        os.makedirs('figures/' + datestr0)
+    basename = 'figures/animations/' + name + '/'
+    if not os.path.exists(basename):
+        os.makedirs(basename)
+    basename += datestr0 + '/'
+    if not os.path.exists(basename):
+        os.makedirs(basename)
     for date in dates:
         datestr = date.isoformat()[:13] # e.g. '2010-02-01T00'
         datestrlong = date.isoformat()  # since tracks are every 15 min, to be more specific
         datestrlong2 = (date+timedelta(seconds=1)).isoformat()  # since tracks are every 15 min, to be more specific
         datenice = date.strftime('%b %d, %Y %H:%M')
-        figname = 'figures/' + datestr0 + '_superposition/' + datestr + '.png'
+        figname = basename + datestr + '.png'
         if os.path.exists(figname):
             continue
 
         # start plot
-        fig = plt.figure(figsize=(9.4, 8.5))
-        ax = fig.add_axes([0.04, 0.04, 1, 0.95], projection=ccrs.Mercator(central_longitude=-85.0))
-        gl = ax.gridlines(linewidth=0.2, color='gray', alpha=0.5, linestyle='-', draw_labels=True)
-        # the following two make the labels look like lat/lon format
-        gl.xformatter = LONGITUDE_FORMATTER
-        gl.yformatter = LATITUDE_FORMATTER
-        gl.xlabels_top = False  # turn off labels where you don't want them
-        gl.ylabels_right = False
-        ax.set_extent([-95.42, -94.4, 28.95, 29.8], ccrs.PlateCarree())
-        ax.add_feature(land_10m, facecolor='0.9')
+        u = m['u'].sel(ocean_time=datestr).isel(yr=slice(1,-1)).data
+        v = m['v'].sel(ocean_time=datestr).isel(xr=slice(1,-1)).data
+        u = resize(u, 1)
+        v = resize(v, 0)
+        var = np.sqrt(u**2 + v**2)
+        fig, ax = setup()
 
         # plot model output
-        u = op.resize(m['u'].sel(ocean_time=datestr).isel(yr=slice(1,-1)).data, 1)
-        v = op.resize(m['v'].sel(ocean_time=datestr).isel(xr=slice(1,-1)).data, 0)
-        s = np.sqrt(u**2 + v**2)
-        mappable = ax.pcolormesh(lon, lat, s, cmap=cmo.speed, transform=ccrs.PlateCarree(), vmin=0, vmax=smax)
+        # vertical vorticity
+        import pdb; pdb.set_trace()
+        vort = (v[:, 1:] - v[:, :-1])*pm - (u[1:, :] - u[:-1, :])*pn
+        # for arrow plotting
+        u = resize(u, 1)
+        v = resize(v, 0)
+        # s = np.sqrt(u**2 + v**2)
+        mappable = ax.pcolormesh(lon, lat, vort, cmap=cmo.curl, transform=ccrs.PlateCarree(), vmin=-vmax, vmax=vmax)
         # lower resolution part
         ax.quiver(lon[:145:dd/4,::dd], lat[:145:dd/4,::dd],
                   u[:145:dd/4,::dd], v[:145:dd/4,::dd], scale=15,
@@ -277,7 +342,7 @@ def drifters():
         cb = fig.colorbar(mappable, cax=cax, orientation='horizontal')#, pad=0.1)
         cb.ax.tick_params(labelsize=12, length=2, color='k', labelcolor='k')
         cb.set_ticks(np.arange(0, 1.4, 0.2))
-        cb.set_label(r'Surface speed [m$\cdot$s$^{-1}$]', fontsize=12, color='k')
+        cb.set_label(r'Surface vertical vorticity [s$^{-1}$]', fontsize=12, color='k')
 
         # tide signal
         axtide = fig.add_axes([0.1, 0.78, .3, 0.08], frameon=False)#, transform=ax.transAxes)
@@ -322,16 +387,17 @@ def drifters():
         axwind.set_xlim([doy.min(), doy.max()])
 
         # plot drifter signal
-        axdrifters = fig.add_axes([0.1, 0.35, .3, 0.1], frameon=False)#, transform=ax.transAxes)
-        axdrifters.plot(df.index, df['drifters'], color='k', linewidth=1.0)
-        axdrifters.fill_between(df[:datestrlong].index, df[:datestrlong]['drifters'], color='0.3', alpha=0.7)
-        axdrifters.fill_between(df[datestrlong:datestrlong].index, df[datestrlong:datestrlong]['drifters'], color='r', linewidth=1)
-        axdrifters.get_yaxis().set_visible(False)
-        axdrifters.get_xaxis().set_visible(False)
-        axdrifters.text(0.12, -0.3, 'drifters exiting', transform=axdrifters.transAxes, fontsize=12)
-        # axdrifters.set_ylim(wmin, wmax)  # to compare with other months
-        axdrifters.axis('tight')
-        axdrifters.autoscale(enable=True, axis='x', tight=True)
+        if plotdriftersum:
+            axdrifters = fig.add_axes([0.1, 0.35, .3, 0.1], frameon=False)#, transform=ax.transAxes)
+            axdrifters.plot(df.index, df['drifters'], color='k', linewidth=1.0)
+            axdrifters.fill_between(df[:datestrlong].index, df[:datestrlong]['drifters'], color='0.3', alpha=0.7)
+            axdrifters.fill_between(df[datestrlong:datestrlong].index, df[datestrlong:datestrlong]['drifters'], color='r', linewidth=1)
+            axdrifters.get_yaxis().set_visible(False)
+            axdrifters.get_xaxis().set_visible(False)
+            axdrifters.text(0.12, -0.3, 'drifters exiting', transform=axdrifters.transAxes, fontsize=12)
+            # axdrifters.set_ylim(wmin, wmax)  # to compare with other months
+            axdrifters.axis('tight')
+            axdrifters.autoscale(enable=True, axis='x', tight=True)
 
         # plot time
         ax.text(-95.399, 29.1, datenice, transform=ccrs.PlateCarree(), fontsize=14)
