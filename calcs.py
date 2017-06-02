@@ -16,66 +16,30 @@ import os
 import netCDF4 as netCDF
 
 
-def baypath(which='ll'):
-    '''Make plot around Galveston Bay.
-
-    This encloses what is OUTSIDE the bay if checks with contains_points().'''
-
-    # getting path encompassing NOT bay only
-    baypathfile = 'calcs/baypathfile.npz'
-    # from init()
-    if not os.path.exists(baypathfile):
-        grid_filename = 'blended_grid.nc'
-        import tracpy
-        proj = tracpy.tools.make_proj(setup='nwgom')
-
-        # Read in grid
-        grid = tracpy.inout.readgrid(grid_filename, proj, usespherical=True)
-        # use pts in projected space OUTSIDE of the coastpath I clicked out before
-        outerpathxy = np.load('../shelf_transport/calcs/coastpaths.npz')['outerpathxy'].item()
-
-        # remove points outside the path
-        ov = outerpathxy.vertices
-        xpath = np.hstack((ov[0:300,0], ov[300,0], ov[0,0], ov[0,0]))
-        ypath = np.hstack((ov[0:300,1], 390, 390, ov[0,1]))
-        newv = np.vstack((xpath, ypath)).T
-        baypathxy = Path(newv)  # make path encompassing shelf not bay for differentiating
-        lonpath, latpath = grid.proj(xpath, ypath, inverse=True)
-        newvll = np.vstack((lonpath, latpath)).T
-        baypathll = Path(newvll)
-        np.savez(baypathfile, baypathxy=baypathxy, baypathll=baypathll)
-    else:
-        baypathll = np.load(baypathfile, encoding='latin1')['baypathll'].item()
-        baypathxy = np.load(baypathfile, encoding='latin1')['baypathxy'].item()
-
-    if which == 'll':
-        return baypathll
-    elif which == 'xy':
-        return baypathxy
-
+baypathll = np.load('calcs/pathbayandjetty.npz', encoding='latin1')['pathll'].item()
 
 def io():
-    '''Calculates - in time - the number of drifters outside the bay.
+    '''Calculates - in time - the number of drifters inside the bay.
 
-    This is determined using the path created in baypath().'''
+    This is determined using baypath.'''
 
-    baypathll = baypath()
-
-    basename = '_superposition'  # '_14days_dx300'
-    refdate = datetime(2010, 7, 15, 0, 0)  # datetime(2010, 7, 15, 0, 0) datetime(2010, 2, 1, 0, 0) datetime(2010, 7, 1, 0, 0)
+    basename = 'newbay/'
+    if not os.path.exists('calcs/enterexit/' + basename):
+        os.makedirs('calcs/enterexit/' + basename)
+    refdate = datetime(2010, 7, 1, 0, 0)  # datetime(2010, 7, 15, 0, 0) datetime(2010, 2, 1, 0, 0) datetime(2010, 7, 1, 0, 0)
 
     if refdate.day == 15:
-        basename = '_backward' + basename
+        direct = '_backward'
     elif refdate.day == 1:
-        basename = '_forward' + basename
+        direct = '_forward'
 
-    if 'forward' in basename:
+    if 'forward' in direct:
         start = refdate
         end = start + timedelta(days=14*2)
-    elif 'backward' in basename:
+    elif 'backward' in direct:
         start = refdate - timedelta(days=14)
         end = start + timedelta(days=2*14)
-    Files = glob('tracks/' + start.isoformat()[:7] + '*' + basename + '*.nc')
+    Files = glob('tracks/' + basename + start.isoformat()[:7] + '*' + direct + '*.nc')
     dfdates = pd.date_range(start=start.isoformat()[:10] + ' 00:00:01', end=end.isoformat()[:10] + ' 00:00:01', freq='900S')
     df = pd.DataFrame(index=dfdates)
     # import pdb; pdb.set_trace()
@@ -84,30 +48,30 @@ def io():
         d = netCDF.Dataset(File)
         lonp = d['lonp'][:]; latp = d['latp'][:]; tp = d['tp'][0,:]
         d.close()
-
-        # points that are outside of bay
+        # points that are inside of bay
         inds = baypathll.contains_points(np.vstack([lonp.flatten(), latp.flatten()]).T).reshape(lonp.shape)
 
-        # save indices of drifters that exit bay
-        exitinfo = np.where(inds)  # tuple: [time, drifter index] for drifter outside bay
-        idrifters = set(exitinfo[0])  # indices of drifters that are outside bay at some point (overall)
+        # save indices of drifters that are outside bay
+        outsideinfo = np.where(~inds)  # tuple: [drifter index, time] for drifter outside bay
+        idrifters = set(outsideinfo[0])  # indices of drifters that are outside bay at some point (overall)
+        numoutside = (~inds).sum(axis=0)  # number of drifter outside of bay by time
 
-        numexit = inds.sum(axis=0)  # number of drifter outside of bay by time
         # add column to dataframe with this information
         simstartdate = File.split('/')[-1].split('14days')[0][:-1]
 
-        dftemp = pd.DataFrame(index=netCDF.num2date(tp, 'seconds since 1970-01-01  00:00:00'), data={simstartdate: numexit})
+        dftemp = pd.DataFrame(index=netCDF.num2date(tp, 'seconds since 1970-01-01  00:00:00'), data={simstartdate: numoutside})
         df = df.join(dftemp)  # add column to dataframe
 
-        df.to_csv('calcs/enterexit/enterexit_' + start.isoformat()[:7] + basename + '.csv')  # save every time step
+        df.to_csv('calcs/enterexit/' + basename + start.isoformat()[:7] + '.csv')  # save every time step to update
         # the following is for plotting drifters that exit domain
-        np.savez('calcs/enterexit/enterexit_' + simstartdate[:13] + basename + '.npz', idrifters=idrifters, exitinfo=exitinfo)
+        np.savez('calcs/enterexit/' + basename + simstartdate[:13] + '.npz', idrifters=idrifters, outsideinfo=outsideinfo)
 
 
 def make_dfs():
     '''Make dataframes between drifters and forcing mechanisms for running stats.'''
 
-    Files = glob('calcs/enterexit/enterexit_*_superposition.csv')
+    basename = 'newbay/'
+    Files = glob('calcs/enterexit/' + basename + '*.csv')
     for File in Files:
         # File = 'calcs/enterexit_sim3_2010-07_backward_14days_dx300.csv'
         df = pd.read_csv(File, parse_dates=True, index_col=0)
@@ -176,11 +140,11 @@ def make_dfs():
         ipos = df['zeta'] >= 0
         df['zeta_floor0'] = df['zeta'][ipos]
 
-        name = 'calcs/df_' + start[:7]
+        name = 'calcs/enterexit/' + basename + 'df_' + start[:7]
         if 'forward' in File:
-            name += '_forward_superposition'
+            name += '_forward'
         elif 'backward' in File:
-            name += '_backward_superposition'
+            name += '_backward'
         df.to_csv(name + '.csv')  # save every time step
 
 
@@ -359,4 +323,5 @@ def stats(which='subtidal', direction='forward'):
 
 
 if __name__ == "__main__":
-    io()
+    # io()
+    make_dfs()
