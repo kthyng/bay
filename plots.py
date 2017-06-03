@@ -80,10 +80,10 @@ def setup(which='land'):
     return fig, ax
 
 
-def conditions(season, direction='forward'):
+def conditions(season, direction='forward', plotdrifters=True):
     '''Plot wind, river, tide for selected time periods.'''
 
-    plotdrifters = True  # whether or not to plot summary drifter results for same time period
+    # plotdrifters = True  # whether or not to plot summary drifter results for same time period
 
     basename = '_14days_dx300'
     if season == 'winter':
@@ -131,11 +131,11 @@ def conditions(season, direction='forward'):
         name = start + '-' + stop + '_'
 
         # read in dataframe
-        File = 'calcs/df_' + refdate.isoformat()[:7] + '_' + direction + '.csv'
+        File = 'calcs/enterexit/df_' + refdate.isoformat()[:7] + '_' + direction + '.csv'
         df = pd.read_csv(File, parse_dates=True, index_col=0)
 
         # tide: from blended model output
-        doy = df.index.dayofyear + df.index.hour/24. + df.index.minute/3600.
+        doy = df.index.dayofyear + df.index.hour/24. + df.index.minute/(60.*24)
         axes[0].plot(doy, df['zeta'].values + dy2, color=color, lw=1)
         axes[0].set_ylabel('Sea surface\nheight [m]')
 
