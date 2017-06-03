@@ -18,6 +18,8 @@ import numpy as np
 import os
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import matplotlib.ticker as mticker
+import octant
+import tracpy
 
 
 mpl.rcParams.update({'font.size': 12})
@@ -59,7 +61,7 @@ def resize(A, dim):
     return np.rollaxis(B, 0, dim+1)
 
 
-def setup():
+def setup(which='land'):
 
     fig = plt.figure(figsize=(9.4, 8.5))
     ax = fig.add_axes([0.04, 0.04, 1, 0.95], projection=ccrs.Mercator(central_longitude=-85.0))
@@ -70,7 +72,10 @@ def setup():
     gl.xlabels_top = False  # turn off labels where you don't want them
     gl.ylabels_right = False
     ax.set_extent([-95.42, -94.4, 28.95, 29.8], ccrs.PlateCarree())
-    ax.add_feature(land_10m, facecolor='0.9')
+    if which == 'land':
+        ax.add_feature(land_10m, facecolor='0.9')
+    elif which == 'coast':
+        ax.coastlines('10m')
 
     return fig, ax
 
@@ -215,12 +220,9 @@ def tracks():
 def drifters():
     '''Plot drifters in time from multiple simulations.'''
 
-    # VORTICITY
-    # RUN DRIFTER ANALYSIS FIRST
-
     year = '2010'
     month = '07'
-    plotdriftersum = False  # add sum of drifter exits in time
+    plotdriftersum = True  # add sum of drifter exits in time
     name = 'newbay'
 
     # model output
@@ -228,27 +230,20 @@ def drifters():
     # m = xr.open_dataset('/rho/raid/dongyu/superposition/blended' + year + month + '.nc')
     # m = xr.open_dataset('/rho/raid/dongyu/blended' + year + month + '.nc')
 
+    proj = tracpy.tools.make_proj('nwgom-pyproj')
+    grid = octant.grid.CGrid_geo(m['lon_vert'].data, m['lat_vert'].data, proj)
+
     dates = m['ocean_time'].to_pandas().dt.to_pydatetime()
-    lon = m['lon'].isel(xr=slice(1,-1), yr=slice(1,-1)).data
-    lat = m['lat'].isel(xr=slice(1,-1), yr=slice(1,-1)).data
     dd = 8  # quiver
     datestr0 = dates[0].isoformat()[:13]  # starting date
     datestr1 = dates[-1].isoformat()[:13]  # ending date
 
-    # calculate grid metrics
-    from pyproj import Proj
-    import pdb; pdb.set_trace()
-    lon = m['lon'].data
-    lat = m['lat'].data
-    inputs = {'proj': 'lcc', 'ellps': 'clrk66', 'datum': 'NAD27',
-              'lat_1': 22.5, 'lat_2': 31.0, 'lat_0': 30, 'lon_0': -94,
-              'x_0': 0, 'y_0': 0}
-    proj = Proj(**inputs)
-    x, y = proj(lon, lat)
-    pm = 1./(x[:, 1:] - x[:, :-1])
-    pm = resize(pm[:, 1:-1], 0)
-    pn = 1./(y[1:, :] - y[:-1, :])
-    pn = resize(pn[1:-1, :], 1)
+    lon_rho = grid.lon_rho
+    lat_rho = grid.lat_rho
+    lon_psi = grid.lon_psi
+    lat_psi = grid.lat_psi
+    pm = resize(resize(grid.pm, 1), 0)
+    pn = resize(resize(grid.pn, 1), 0)
 
     # load previously-saved mechanism time series
     # hourly, for this time frame
@@ -264,17 +259,18 @@ def drifters():
     rmax = river.max()
     river = river[datestr0:datestr1].resample('60T').interpolate()
     # variable max
-    vmax = 0.1
+    vmax = 0.005
 
     if plotdriftersum:
         # load in drifter data. Later normalize here.
-        df = pd.read_csv('calcs/df_2010-07_forward_superposition.csv',
+        df = pd.read_csv('calcs/enterexit/' + name + '/df_2010-07.csv',
                          parse_dates=True, index_col=0)
+        df['drifters_smooth'] = pd.rolling_mean(df['drifters'], 20, center=True)
 
     dss = []  # forward moving drifter sims
-    dss2 = []  # drifters that stay outside bay
-    dsbase = '_forward_superposition'  # '_forward_14days_dx300'
-    dsfiles = glob('tracks/' + year + '-' + month + '*' + dsbase + '.nc')
+    # dss2 = []  # drifters that stay outside bay
+    dsbase = '_forward'  # '_forward_14days_dx300'
+    dsfiles = glob('tracks/' + name + '/' + year + '-' + month + '*' + dsbase + '.nc')
     # # name of drifter file that has starting date of date
     # fname = dffiles[np.where([datestr in dffiles[i] for i in range(len(dffiles))])[0][0]]
     for dsfile in dsfiles:
@@ -282,10 +278,9 @@ def drifters():
         dstemp['tp'] = (('nt'), dstemp['tp'].isel(ntrac=0))  # change tp to 1d
         dstemp = dstemp.swap_dims({'nt': 'tp'})  # so that can index off tp
         # choose only drifters that enter/exit domain
-        File = 'calcs/enterexit/enterexit_' + dsfile.split('/')[1][:13] + '_forward_superposition.npz'
+        File = 'calcs/enterexit/' + name + '/' + dsfile.split('/')[-1][:13] + '.npz'
         # File = 'calcs/enterexit/enterexit_sim3_' + dsfile.split('/')[1][:13] + '_forward_14days_dx300.npz'
         d = np.load(File)
-        # import pdb; pdb.set_trace()
         idrifters = list(d['idrifters'].item())
         # etimes, edrifters = d['exitinfo']
         # [exitinfo[0]]
@@ -307,32 +302,31 @@ def drifters():
         datestrlong2 = (date+timedelta(seconds=1)).isoformat()  # since tracks are every 15 min, to be more specific
         datenice = date.strftime('%b %d, %Y %H:%M')
         figname = basename + datestr + '.png'
+        # if not datestr == '2010-07-06T14':
+        #     continue
         if os.path.exists(figname):
             continue
 
         # start plot
-        u = m['u'].sel(ocean_time=datestr).isel(yr=slice(1,-1)).data
-        v = m['v'].sel(ocean_time=datestr).isel(xr=slice(1,-1)).data
-        u = resize(u, 1)
-        v = resize(v, 0)
-        var = np.sqrt(u**2 + v**2)
+        u = m['u'].sel(ocean_time=datestr).data
+        v = m['v'].sel(ocean_time=datestr).data
         fig, ax = setup()
 
         # plot model output
         # vertical vorticity
-        import pdb; pdb.set_trace()
         vort = (v[:, 1:] - v[:, :-1])*pm - (u[1:, :] - u[:-1, :])*pn
         # for arrow plotting
-        u = resize(u, 1)
-        v = resize(v, 0)
+        u = resize(u, 0)
+        v = resize(v, 1)
         # s = np.sqrt(u**2 + v**2)
-        mappable = ax.pcolormesh(lon, lat, vort, cmap=cmo.curl, transform=ccrs.PlateCarree(), vmin=-vmax, vmax=vmax)
+        mappable = ax.pcolormesh(lon_rho, lat_rho, vort, cmap=cmo.curl, transform=ccrs.PlateCarree(), vmin=-vmax, vmax=vmax)
+        # import pdb; pdb.set_trace()
         # lower resolution part
-        ax.quiver(lon[:145:dd/4,::dd], lat[:145:dd/4,::dd],
+        ax.quiver(lon_psi[:145:dd/4,::dd], lat_psi[:145:dd/4,::dd],
                   u[:145:dd/4,::dd], v[:145:dd/4,::dd], scale=15,
                   color='k', transform=ccrs.PlateCarree(), pivot='middle')
         # higher resolution part in bay
-        Q = ax.quiver(lon[144::dd,::dd], lat[144::dd,::dd],
+        Q = ax.quiver(lon_psi[144::dd,::dd], lat_psi[144::dd,::dd],
                   u[144::dd,::dd], v[144::dd,::dd], scale=15,
                   color='k', transform=ccrs.PlateCarree(), pivot='middle')
         qk = ax.quiverkey(Q, 0.12, 0.1, 0.5, r'0.5 m$\cdot$s$^{-1}$ current', labelcolor='k', fontproperties={'size': '10'})
@@ -387,11 +381,13 @@ def drifters():
         axwind.set_xlim([doy.min(), doy.max()])
 
         # plot drifter signal
+        # import pdb; pdb.set_trace()
+        # dmax = df['drifters'].max()
         if plotdriftersum:
             axdrifters = fig.add_axes([0.1, 0.35, .3, 0.1], frameon=False)#, transform=ax.transAxes)
-            axdrifters.plot(df.index, df['drifters'], color='k', linewidth=1.0)
-            axdrifters.fill_between(df[:datestrlong].index, df[:datestrlong]['drifters'], color='0.3', alpha=0.7)
-            axdrifters.fill_between(df[datestrlong:datestrlong].index, df[datestrlong:datestrlong]['drifters'], color='r', linewidth=1)
+            axdrifters.plot(df.index, df['drifters_smooth'], color='k', linewidth=1.0)
+            axdrifters.fill_between(df[:datestrlong].index, df[:datestrlong]['drifters_smooth'], color='0.3', alpha=0.7)
+            axdrifters.fill_between(df[datestrlong:datestrlong].index, df[datestrlong:datestrlong]['drifters_smooth'], color='r', linewidth=1)
             axdrifters.get_yaxis().set_visible(False)
             axdrifters.get_xaxis().set_visible(False)
             axdrifters.text(0.12, -0.3, 'drifters exiting', transform=axdrifters.transAxes, fontsize=12)
@@ -408,7 +404,7 @@ def drifters():
             try:  # drifter files are available every 4 hours not hourly
                 ds = ds.sel(tp=slice(datestrlong,datestrlong2))
                 # ds2 = ds2.sel(tp=slice(datestrlong,datestrlong2))
-                ax.plot(ds['lonp'], ds['latp'], 'o', color='#782277',
+                ax.plot(ds['lonp'].data, ds['latp'].data, 'o', color='#782277',
                         markersize=7, alpha=0.7, transform=ccrs.PlateCarree());
                 # ax.plot(ds2['lonp'], ds2['latp'], 'o', color='#782277',
                 #         markersize=7, alpha=0.7, transform=ccrs.PlateCarree(),
@@ -416,6 +412,13 @@ def drifters():
             except:
                 # print(ds.tp[0])
                 continue
+        # import pdb; pdb.set_trace()
+
+        # overlay baypath
+        baypath = np.load('calcs/pathbayandjetty.npz', encoding='latin1')['pathll'].item()
+        ax.plot(baypath.vertices[:,0], baypath.vertices[:,1], 'r', transform=ccrs.PlateCarree())
+        # import pdb; pdb.set_trace()
+
         fig.savefig(figname, bbox_inches='tight', dpi=120)
         plt.close(fig)
 
