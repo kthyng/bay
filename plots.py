@@ -259,13 +259,14 @@ def drifters():
     rmax = river.max()
     river = river[datestr0:datestr1].resample('60T').interpolate()
     # variable max
-    vmax = 0.005
+    vmax = 0.001
 
     if plotdriftersum:
         # load in drifter data. Later normalize here.
         df = pd.read_csv('calcs/enterexit/' + name + '/df_2010-07.csv',
                          parse_dates=True, index_col=0)
-        df['drifters_smooth'] = pd.rolling_mean(df['drifters'], 20, center=True)
+        # df['drifters_smooth'] = pd.rolling_mean(df['drifters'], 20, center=True)
+        df['drifters_smooth'] = df['drifters'].copy()
 
     dss = []  # forward moving drifter sims
     # dss2 = []  # drifters that stay outside bay
@@ -290,13 +291,13 @@ def drifters():
         # # separate out the two sets of drifters so they don't overlap
         # dss2.append(dstemp.isel(ntrac=idrifters2))  # are outside bay at end of sim time
 
-    basename = 'figures/animations/' + name + '/'
+    basename = 'figures/animations/' + name + '/speed/'
     if not os.path.exists(basename):
         os.makedirs(basename)
     basename += datestr0 + '/'
     if not os.path.exists(basename):
         os.makedirs(basename)
-    for date in dates:
+    for date in dates[::4]:
         datestr = date.isoformat()[:13] # e.g. '2010-02-01T00'
         datestrlong = date.isoformat()  # since tracks are every 15 min, to be more specific
         datestrlong2 = (date+timedelta(seconds=1)).isoformat()  # since tracks are every 15 min, to be more specific
@@ -319,7 +320,7 @@ def drifters():
         u = resize(u, 0)
         v = resize(v, 1)
         # s = np.sqrt(u**2 + v**2)
-        mappable = ax.pcolormesh(lon_rho, lat_rho, vort, cmap=cmo.curl, transform=ccrs.PlateCarree(), vmin=-vmax, vmax=vmax)
+        # mappable = ax.pcolormesh(lon_rho, lat_rho, vort, cmap=cmo.curl, transform=ccrs.PlateCarree(), vmin=-vmax, vmax=vmax)
         # import pdb; pdb.set_trace()
         # lower resolution part
         ax.quiver(lon_psi[:145:dd/4,::dd], lat_psi[:145:dd/4,::dd],
@@ -331,12 +332,12 @@ def drifters():
                   color='k', transform=ccrs.PlateCarree(), pivot='middle')
         qk = ax.quiverkey(Q, 0.12, 0.1, 0.5, r'0.5 m$\cdot$s$^{-1}$ current', labelcolor='k', fontproperties={'size': '10'})
 
-        # colorbar
-        cax = fig.add_axes([0.125, 0.95, .25, 0.03])
-        cb = fig.colorbar(mappable, cax=cax, orientation='horizontal')#, pad=0.1)
-        cb.ax.tick_params(labelsize=12, length=2, color='k', labelcolor='k')
-        cb.set_ticks(np.arange(0, 1.4, 0.2))
-        cb.set_label(r'Surface vertical vorticity [s$^{-1}$]', fontsize=12, color='k')
+        # # colorbar
+        # cax = fig.add_axes([0.125, 0.95, .25, 0.03])
+        # cb = fig.colorbar(mappable, cax=cax, orientation='horizontal')#, pad=0.1)
+        # cb.ax.tick_params(labelsize=12, length=2, color='k', labelcolor='k')
+        # cb.set_ticks(np.arange(0, 1.4, 0.2))
+        # cb.set_label(r'Surface vertical vorticity [s$^{-1}$]', fontsize=12, color='k')
 
         # tide signal
         axtide = fig.add_axes([0.1, 0.78, .3, 0.08], frameon=False)#, transform=ax.transAxes)
@@ -416,7 +417,7 @@ def drifters():
 
         # overlay baypath
         baypath = np.load('calcs/pathbayandjetty.npz', encoding='latin1')['pathll'].item()
-        ax.plot(baypath.vertices[:,0], baypath.vertices[:,1], 'r', transform=ccrs.PlateCarree())
+        ax.plot(baypath.vertices[:,0], baypath.vertices[:,1], 'r', transform=ccrs.PlateCarree(), alpha=0.7)
         # import pdb; pdb.set_trace()
 
         fig.savefig(figname, bbox_inches='tight', dpi=120)
