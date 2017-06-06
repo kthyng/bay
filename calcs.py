@@ -18,12 +18,12 @@ import netCDF4 as netCDF
 
 baypathll = np.load('calcs/pathbayandjetty.npz', encoding='latin1')['pathll'].item()
 
-def io():
+def io(ind=-1):
     '''Calculates - in time - the number of drifters inside the bay.
 
     This is determined using baypath.'''
 
-    basename = 'newbay/'
+    basename = 'newsuperposition/'
     if not os.path.exists('calcs/enterexit/' + basename):
         os.makedirs('calcs/enterexit/' + basename)
     refdate = datetime(2010, 7, 1, 0, 0)  # datetime(2010, 7, 15, 0, 0) datetime(2010, 2, 1, 0, 0) datetime(2010, 7, 1, 0, 0)
@@ -42,41 +42,54 @@ def io():
     Files = glob('tracks/' + basename + start.isoformat()[:7] + '*' + direct + '*.nc')
     dfdates = pd.date_range(start=start.isoformat()[:10] + ' 00:00:01', end=end.isoformat()[:10] + ' 00:00:01', freq='900S')
     df = pd.DataFrame(index=dfdates)
-    # import pdb; pdb.set_trace()
-    for File in Files:
+    for i, File in enumerate(Files):
+
+        # short-circuit if ind is not -1 and just use that index instead
+        if ind != -1:
+            if i != ind:
+                continue
         # print(File)
         d = netCDF.Dataset(File)
         lonp = d['lonp'][:]; latp = d['latp'][:]; tp = d['tp'][0,:]
         d.close()
         # points that are inside of bay
         inds = baypathll.contains_points(np.vstack([lonp.flatten(), latp.flatten()]).T).reshape(lonp.shape)
+        # import pdb; pdb.set_trace()
 
         # save indices of drifters that are outside bay
         outsideinfo = np.where(~inds)  # tuple: [drifter index, time] for drifter outside bay
         idrifters = set(outsideinfo[0])  # indices of drifters that are outside bay at some point (overall)
         numoutside = (~inds).sum(axis=0)  # number of drifter outside of bay by time
-
+        # import pdb; pdb.set_trace()
         # add column to dataframe with this information
         simstartdate = File.split('/')[-1].split('14days')[0][:-1]
 
         dftemp = pd.DataFrame(index=netCDF.num2date(tp, 'seconds since 1970-01-01  00:00:00'), data={simstartdate: numoutside})
         df = df.join(dftemp)  # add column to dataframe
 
-        df.to_csv('calcs/enterexit/' + basename + start.isoformat()[:7] + '.csv')  # save every time step to update
+        if ind == -1:
+            df.to_csv('calcs/enterexit/' + basename + start.isoformat()[:7] + '.csv')  # save every time step to update
+        else:
+            df.to_csv('calcs/enterexit/' + basename + File.split('/')[-1][:13] + '.csv')  # save every time step to update
         # the following is for plotting drifters that exit domain
         np.savez('calcs/enterexit/' + basename + simstartdate[:13] + '.npz', idrifters=idrifters, outsideinfo=outsideinfo)
 
 
-def make_dfs():
+def make_dfs(which='2010-07.csv'):
     '''Make dataframes between drifters and forcing mechanisms for running stats.'''
 
-    basename = 'newbay/'
-    Files = glob('calcs/enterexit/' + basename + '*.csv')
+    basename = 'newsuperposition/'
+    Files = sorted(glob('calcs/enterexit/' + basename + which))
+    # import pdb; pdb.set_trace()
     for File in Files:
         # File = 'calcs/enterexit_sim3_2010-07_backward_14days_dx300.csv'
         df = pd.read_csv(File, parse_dates=True, index_col=0)
-        nfiles = (~np.isnan(df)).astype(int).sum(axis='columns')
-        y = df.sum(axis='columns').divide(nfiles).resample('15min', base=0).interpolate()
+        # nfiles = (~np.isnan(df)).astype(int).sum(axis='columns')
+        # y = df.sum(axis='columns').divide(nfiles).resample('15min', base=0).interpolate()
+        # delta drifters
+        # import pdb; pdb.set_trace()
+        # delta drifters, averaged over file and smoothed
+        y = df.diff(axis=0).mean(axis=1).rolling(window=16).mean()
 
         start = df.index[0].isoformat()[:10]
         stop = df.index[-1].isoformat()[:10]
@@ -140,12 +153,13 @@ def make_dfs():
         ipos = df['zeta'] >= 0
         df['zeta_floor0'] = df['zeta'][ipos]
 
-        name = 'calcs/enterexit/' + basename + 'df_' + start[:7]
+        name = 'calcs/enterexit/' + basename + 'df_' + which
+        # name = 'calcs/enterexit/' + basename + 'df_' + File.split('/')[-1].split('.')[0] + start[:7]
         if 'forward' in File:
             name += '_forward'
         elif 'backward' in File:
             name += '_backward'
-        df.to_csv(name + '.csv')  # save every time step
+        df.to_csv(name)  # save every time step
 
 
 def powerset(inlist):
@@ -322,6 +336,6 @@ def stats(which='subtidal', direction='forward'):
     # plot(df['drifters_subtidal'][istart:iend][imax+imax:], df['theta'][istart:iend][imax:-imax], 'b.')
 
 
-if __name__ == "__main__":
+# if __name__ == "__main__":
     # io()
-    make_dfs()
+    # make_dfs()
