@@ -15,7 +15,7 @@ import cartopy
 import cartopy.crs as ccrs
 import xarray as xr
 
-# loc = sorted(glob('/rho/raid/dongyu/blended*.nc'))
+# loc = sorted(glob('/rho/raid/dongyu/blended*.nc'))  # original bay? (Rayson, on blended grid)
 # loc = sorted(glob('/rho/raid/dongyu/superposition/blended*.nc'))
 # loc = '/rho/raid/dongyu/201007_new/blended201007.nc'  # new bay model output
 loc = '/rho/raid/dongyu/superposition/blended201007.nc'  # new superposition
