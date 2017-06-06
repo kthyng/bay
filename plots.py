@@ -217,16 +217,19 @@ def tracks():
             plt.close(fig)
 
 
-def drifters():
+def drifters(which='df_2010-07.csv'):
     '''Plot drifters in time from multiple simulations.'''
 
     year = '2010'
     month = '07'
     plotdriftersum = True  # add sum of drifter exits in time
-    name = 'newbay'
+    name = 'newsuperposition'
 
     # model output
-    m = xr.open_dataset('/rho/raid/dongyu/201007_new/blended201007.nc')  # new bay
+    if name == 'newbay':
+        m = xr.open_dataset('/rho/raid/dongyu/201007_new/blended201007.nc')  # new bay
+    elif name == 'newsuperposition':
+        m = xr.open_dataset('/rho/raid/dongyu/superposition/blended201007.nc')
     # m = xr.open_dataset('/rho/raid/dongyu/superposition/blended' + year + month + '.nc')
     # m = xr.open_dataset('/rho/raid/dongyu/blended' + year + month + '.nc')
 
@@ -260,20 +263,26 @@ def drifters():
     river = river[datestr0:datestr1].resample('60T').interpolate()
     # variable max
     vmax = 0.001
+    smax = 1.4
 
     if plotdriftersum:
         # load in drifter data. Later normalize here.
-        df = pd.read_csv('calcs/enterexit/' + name + '/df_2010-07.csv',
+        df = pd.read_csv('calcs/enterexit/' + name + '/' + which,
                          parse_dates=True, index_col=0)
         # df['drifters_smooth'] = pd.rolling_mean(df['drifters'], 20, center=True)
-        df['drifters_smooth'] = df['drifters'].copy()
+        # df['drifters_smooth'] = df.diff(axis=0).mean(axis=1)  # this is the delta drifters
+        df['drifters_smooth'] = df['drifters']
 
     dss = []  # forward moving drifter sims
     # dss2 = []  # drifters that stay outside bay
     dsbase = '_forward'  # '_forward_14days_dx300'
-    dsfiles = glob('tracks/' + name + '/' + year + '-' + month + '*' + dsbase + '.nc')
+    if len(which) == 14:  # e.g. 'df_2010-07.csv', read in all files
+        dsfiles = sorted(glob('tracks/' + name + '/' + year + '-' + month + '*' + dsbase + '.nc'))
+    else:
+        dsfiles = ['tracks/' + name + '/' + which[3:16] + dsbase + '.nc']  # justone file
     # # name of drifter file that has starting date of date
     # fname = dffiles[np.where([datestr in dffiles[i] for i in range(len(dffiles))])[0][0]]
+    # import pdb; pdb.set_trace()
     for dsfile in dsfiles:
         dstemp = xr.open_dataset(dsfile)
         dstemp['tp'] = (('nt'), dstemp['tp'].isel(ntrac=0))  # change tp to 1d
@@ -291,13 +300,14 @@ def drifters():
         # # separate out the two sets of drifters so they don't overlap
         # dss2.append(dstemp.isel(ntrac=idrifters2))  # are outside bay at end of sim time
 
-    basename = 'figures/animations/' + name + '/speed/'
+    basename = 'figures/animations/' + name + '/speed/' + which.split('.')[0] + '/'
     if not os.path.exists(basename):
         os.makedirs(basename)
     basename += datestr0 + '/'
     if not os.path.exists(basename):
         os.makedirs(basename)
-    for date in dates[::4]:
+    for date in dates[::2]:
+        date += timedelta(seconds=1)
         datestr = date.isoformat()[:13] # e.g. '2010-02-01T00'
         datestrlong = date.isoformat()  # since tracks are every 15 min, to be more specific
         datestrlong2 = (date+timedelta(seconds=1)).isoformat()  # since tracks are every 15 min, to be more specific
@@ -315,12 +325,13 @@ def drifters():
 
         # plot model output
         # vertical vorticity
-        vort = (v[:, 1:] - v[:, :-1])*pm - (u[1:, :] - u[:-1, :])*pn
+        # vort = (v[:, 1:] - v[:, :-1])*pm - (u[1:, :] - u[:-1, :])*pn
         # for arrow plotting
         u = resize(u, 0)
         v = resize(v, 1)
-        # s = np.sqrt(u**2 + v**2)
+        s = np.sqrt(u**2 + v**2)
         # mappable = ax.pcolormesh(lon_rho, lat_rho, vort, cmap=cmo.curl, transform=ccrs.PlateCarree(), vmin=-vmax, vmax=vmax)
+        mappable = ax.pcolormesh(lon_rho, lat_rho, s, cmap=cmo.speed, transform=ccrs.PlateCarree(), vmin=0, vmax=smax)
         # import pdb; pdb.set_trace()
         # lower resolution part
         ax.quiver(lon_psi[:145:dd/4,::dd], lat_psi[:145:dd/4,::dd],
@@ -332,11 +343,12 @@ def drifters():
                   color='k', transform=ccrs.PlateCarree(), pivot='middle')
         qk = ax.quiverkey(Q, 0.12, 0.1, 0.5, r'0.5 m$\cdot$s$^{-1}$ current', labelcolor='k', fontproperties={'size': '10'})
 
-        # # colorbar
-        # cax = fig.add_axes([0.125, 0.95, .25, 0.03])
-        # cb = fig.colorbar(mappable, cax=cax, orientation='horizontal')#, pad=0.1)
-        # cb.ax.tick_params(labelsize=12, length=2, color='k', labelcolor='k')
-        # cb.set_ticks(np.arange(0, 1.4, 0.2))
+        # colorbar
+        cax = fig.add_axes([0.125, 0.95, .25, 0.03])
+        cb = fig.colorbar(mappable, cax=cax, orientation='horizontal')#, pad=0.1)
+        cb.ax.tick_params(labelsize=12, length=2, color='k', labelcolor='k')
+        cb.set_ticks(np.arange(0, 1.4, 0.2))
+        cb.set_label(r'Surface speed [ms$^{-1}$]', fontsize=12, color='k')
         # cb.set_label(r'Surface vertical vorticity [s$^{-1}$]', fontsize=12, color='k')
 
         # tide signal
@@ -387,8 +399,10 @@ def drifters():
         if plotdriftersum:
             axdrifters = fig.add_axes([0.1, 0.35, .3, 0.1], frameon=False)#, transform=ax.transAxes)
             axdrifters.plot(df.index, df['drifters_smooth'], color='k', linewidth=1.0)
-            axdrifters.fill_between(df[:datestrlong].index, df[:datestrlong]['drifters_smooth'], color='0.3', alpha=0.7)
-            axdrifters.fill_between(df[datestrlong:datestrlong].index, df[datestrlong:datestrlong]['drifters_smooth'], color='r', linewidth=1)
+            # import pdb; pdb.set_trace()
+            axdrifters.fill_between(df[datestrlong:datestrlong].index, df[datestrlong:datestrlong]['drifters_smooth'], color='r', linewidth=5)
+            # axdrifters.fill_between(df[:datestrlong].index, df[:datestrlong]['drifters_smooth'], color='0.3', alpha=0.7)
+            # axdrifters.fill_between(df[datestrlong:datestrlong].index, df[datestrlong:datestrlong]['drifters_smooth'], color='r', linewidth=1)
             axdrifters.get_yaxis().set_visible(False)
             axdrifters.get_xaxis().set_visible(False)
             axdrifters.text(0.12, -0.3, 'drifters exiting', transform=axdrifters.transAxes, fontsize=12)
@@ -405,6 +419,8 @@ def drifters():
             try:  # drifter files are available every 4 hours not hourly
                 ds = ds.sel(tp=slice(datestrlong,datestrlong2))
                 # ds2 = ds2.sel(tp=slice(datestrlong,datestrlong2))
+                # ax.plot(ds['lonp'].data, ds['latp'].data, 'o', color='r',
+                #         markersize=7, alpha=0.7, transform=ccrs.PlateCarree());
                 ax.plot(ds['lonp'].data, ds['latp'].data, 'o', color='#782277',
                         markersize=7, alpha=0.7, transform=ccrs.PlateCarree());
                 # ax.plot(ds2['lonp'], ds2['latp'], 'o', color='#782277',
@@ -415,10 +431,10 @@ def drifters():
                 continue
         # import pdb; pdb.set_trace()
 
-        # overlay baypath
-        baypath = np.load('calcs/pathbayandjetty.npz', encoding='latin1')['pathll'].item()
-        ax.plot(baypath.vertices[:,0], baypath.vertices[:,1], 'r', transform=ccrs.PlateCarree(), alpha=0.7)
-        # import pdb; pdb.set_trace()
+        # # overlay baypath
+        # baypath = np.load('calcs/pathbayandjetty.npz', encoding='latin1')['pathll'].item()
+        # ax.plot(baypath.vertices[:,0], baypath.vertices[:,1], 'r', transform=ccrs.PlateCarree(), alpha=0.7)
+        # # import pdb; pdb.set_trace()
 
         fig.savefig(figname, bbox_inches='tight', dpi=120)
         plt.close(fig)
