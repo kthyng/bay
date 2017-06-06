@@ -32,7 +32,7 @@ def from_shelf(var, start, stop, xrho=274, yrho=165):
     Default xr/yr location is in entrance to Galveston Bay.
     '''
 
-    loc = 'http://barataria.tamu.edu:8080/thredds/dodsC/NcML/txla_hindcast_agg'
+    loc = 'http://copano.tamu.edu:8080/thredds/dodsC/NcML/txla_hindcast_agg'
     d = xr.open_dataset(loc)
 
     if var == 'wind':
