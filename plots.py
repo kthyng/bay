@@ -263,7 +263,7 @@ def drifters(which='df_2010-07.csv'):
     river = river[datestr0:datestr1].resample('60T').interpolate()
     # variable max
     vmax = 0.001
-    smax = 1.4
+    smax = 1.6
 
     if plotdriftersum:
         # load in drifter data. Later normalize here.
@@ -366,6 +366,7 @@ def drifters(which='df_2010-07.csv'):
         axriver.plot(river.index, river, color='0.5', linewidth=2.5, alpha=0.4)
         axriver.get_yaxis().set_visible(False)
         axriver.get_xaxis().set_visible(False)
+        # axriver.set_xlim([doy.min(), doy.max()])
         axriver.set_ylim(rmin, rmax)  # to compare with other months
         # second, plot river on its own so it's more visible. But overlaid on same axes location.
         axriver2 = axriver.twinx()
@@ -398,9 +399,10 @@ def drifters(which='df_2010-07.csv'):
         # dmax = df['drifters'].max()
         if plotdriftersum:
             axdrifters = fig.add_axes([0.1, 0.35, .3, 0.1], frameon=False)#, transform=ax.transAxes)
-            axdrifters.plot(df.index, df['drifters_smooth'], color='k', linewidth=1.0)
+            axdrifters.plot(df.index, df['drifters_smooth'], color='k', linewidth=1.0, alpha=0.5)
+            axdrifters.plot(df[:datestrlong].index, df[:datestrlong]['drifters_smooth'], color='k', linewidth=1.0, alpha=0.5)
             # import pdb; pdb.set_trace()
-            axdrifters.fill_between(df[datestrlong:datestrlong].index, df[datestrlong:datestrlong]['drifters_smooth'], color='r', linewidth=5)
+            # axdrifters.fill_between(df[datestrlong:datestrlong].index, df[datestrlong:datestrlong]['drifters_smooth'], color='r', linewidth=5)
             # axdrifters.fill_between(df[:datestrlong].index, df[:datestrlong]['drifters_smooth'], color='0.3', alpha=0.7)
             # axdrifters.fill_between(df[datestrlong:datestrlong].index, df[datestrlong:datestrlong]['drifters_smooth'], color='r', linewidth=1)
             axdrifters.get_yaxis().set_visible(False)
@@ -409,6 +411,7 @@ def drifters(which='df_2010-07.csv'):
             # axdrifters.set_ylim(wmin, wmax)  # to compare with other months
             axdrifters.axis('tight')
             axdrifters.autoscale(enable=True, axis='x', tight=True)
+            axdrifters.set_xlim([df.index.min(), df.index.max()])
 
         # plot time
         ax.text(-95.399, 29.1, datenice, transform=ccrs.PlateCarree(), fontsize=14)
