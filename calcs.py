@@ -80,7 +80,6 @@ def make_dfs(which='2010-07.csv'):
 
     basename = 'newsuperposition/'
     Files = sorted(glob('calcs/enterexit/' + basename + which))
-    # import pdb; pdb.set_trace()
     for File in Files:
         # File = 'calcs/enterexit_sim3_2010-07_backward_14days_dx300.csv'
         df = pd.read_csv(File, parse_dates=True, index_col=0)
@@ -90,11 +89,16 @@ def make_dfs(which='2010-07.csv'):
         # import pdb; pdb.set_trace()
         # delta drifters, averaged over file and smoothed
         y = df.diff(axis=0).mean(axis=1).rolling(window=16).mean()
+        ind = np.isnan(y)
+        y = y.resample('15T', base=0).interpolate()  # moving away from 1 minute base
+        # insert nan's back
+        y[np.where(ind)[0]] = np.nan
 
         start = df.index[0].isoformat()[:10]
         stop = df.index[-1].isoformat()[:10]
 
         river = read.from_suntans(start, stop).resample('15min').interpolate()['boundary_Q'][:y.index[-1].isoformat()]
+        # import pdb; pdb.set_trace()
         zeta = read.from_blended('zeta', start, stop).to_dataframe().resample('15min').interpolate()['zeta'][:y.index[-1].isoformat()]
         uwind = read.from_shelf('Uwind', start, stop).to_dataframe().resample('15min').interpolate()['Uwind'][:y.index[-1].isoformat()]
         vwind = read.from_shelf('Vwind', start, stop).to_dataframe().resample('15min').interpolate()['Vwind'][:y.index[-1].isoformat()]
@@ -259,14 +263,15 @@ def scaled(df, combo, which='subtidal'):
     return dfscaled
 
 
-def stats(which='subtidal', direction='forward'):
+def stats(which='subtidal', direction='forward', simname='newsuperposition'):
     '''Calculate stats.
 
     Maybe only do subtidal since tidal appears to have no impact on how many
     drifters stay outside.'''
 
     # Files = glob('calcs/df_????-??_*ward.csv')
-    Files = glob('calcs/df_????-??_' + direction + '.csv')
+    Files = glob('calcs/enterexit/' + simname + '/df_????-??_.csv')
+    # Files = glob('calcs/enterexit/' + simname + '/df_????-??_' + direction + '.csv')
     # Files = glob('calcs/df_2010-02_forward.csv')
     for File in Files:
         # print(File)
