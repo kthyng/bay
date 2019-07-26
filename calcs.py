@@ -210,9 +210,41 @@ def filter_powerset(df, which):
 
         iremove = list(np.where([('dzeta' in combo and 'dzeta_floor0' in combo) for combo in combos])[0])
         iremove.extend(np.where([('zeta' in combo and 'zeta_floor0' in combo) for combo in combos])[0])
+        iremove.extend(np.where([('zeta' in combo and 'zeta_shifted' in combo) for combo in combos])[0])
+        iremove.extend(np.where([('zeta_floor0' in combo and 'zeta_shifted' in combo) for combo in combos])[0])
         iremove.extend(np.where([('zeta_shifted' in combo and 'zeta_shifted_floor0' in combo) for combo in combos])[0])
         # remove these instances
         combos = np.delete(np.asarray(combos), list(set(iremove)))
+
+    elif which == 'drifters':
+
+        mechanisms = df.columns[['drifters' not in column and 'tidal' not in column and 'subtidal' not in column for column in df.columns]]
+        combos = powerset(mechanisms)[1:]  # skip empty
+        # import pdb; pdb.set_trace()
+        # filter allowed combinations
+        iremove = list(np.where([('river' in combo and 'river_shifted' in combo) for combo in combos])[0])
+        iremove.extend(np.where([('theta' in combo and 'theta_shifted' in combo) for combo in combos])[0])
+        iremove.extend(np.where([('theta' in combo and 'dtheta' in combo) for combo in combos])[0])
+        iremove.extend(np.where([('dtheta' in combo and 'theta_shifted' in combo) for combo in combos])[0])
+        iremove.extend(np.where([('uwind' in combo and 'sustr' in combo) or ('vwind' in combo and 'svstr' in combo) for combo in combos])[0])
+        iremove.extend(np.where([('uwind' in combo and 'svstr' in combo) or ('vwind' in combo and 'sustr' in combo) for combo in combos])[0])
+        iremove.extend(np.where([(('uwind' in combo or 'vwind' in combo) and ('sustr' in combo and 'svstr' in combo)) for combo in combos])[0])
+        iremove.extend(np.where([(('uwind' in combo and 'vwind' in combo) and ('sustr' in combo or 'svstr' in combo)) for combo in combos])[0])
+        iremove.extend(np.where([(('uwind' in combo or 'vwind' in combo) and ('s' in combo and 'theta' in combo)) for combo in combos])[0])
+        iremove.extend(np.where([(('uwind' in combo and 'vwind' in combo) and ('s' in combo or 'theta' in combo)) for combo in combos])[0])
+        iremove.extend(np.where([(('sustr' in combo or 'svstr' in combo) and ('s' in combo and 'theta' in combo)) for combo in combos])[0])
+        iremove.extend(np.where([(('sustr' in combo and 'svstr' in combo) and ('s' in combo or 'theta' in combo)) for combo in combos])[0])
+        iremove.extend(np.where([('dzeta' in combo and 'dzeta_floor0' in combo) for combo in combos])[0])
+        iremove.extend(np.where([('zeta' in combo and 'zeta_floor0' in combo) for combo in combos])[0])
+        iremove.extend(np.where([('zeta_shifted' in combo and 'zeta_floor0' in combo) for combo in combos])[0])
+        # iremove.extend(np.where([('zeta' in combo and 'dzeta' in combo) for combo in combos])[0])
+        iremove.extend(np.where([('zeta' in combo and 'zeta_shifted' in combo) for combo in combos])[0])
+        # iremove.extend(np.where([('dzeta' in combo) for combo in combos])[0])
+        # iremove.extend(np.where([('dzeta_floor0' in combo) for combo in combos])[0])
+        # iremove.extend(np.where([('zeta_floor0' in combo) for combo in combos])[0])
+        # remove these instances
+        combos = np.delete(np.asarray(combos), list(set(iremove)))
+    # import pdb; pdb.set_trace()
 
     return combos
 
@@ -224,6 +256,8 @@ def transform(df, which):
         varfull = pd.read_csv('calcs/river2009-2011.csv', parse_dates=True, index_col=0)['108.394273505']
     elif 'uwind' in which:
         varfull = pd.read_csv('calcs/uwind2009-2011.csv', parse_dates=True, index_col=0)['-6.20427322388']
+    elif 'zeta' in which:
+        varfull = pd.read_csv('calcs/zeta2009-2011.csv', parse_dates=True, index_col=0)['0.0549901995635']
     elif 'vwind' in which:
         varfull = pd.read_csv('calcs/vwind2009-2011.csv', parse_dates=True, index_col=0)['-2.68748617172']
     elif 'sustr' in which:
@@ -238,13 +272,27 @@ def transform(df, which):
         varfull1 = pd.read_csv('calcs/uwind2009-2011.csv', parse_dates=True, index_col=0)['-6.20427322388']
         varfull2 = pd.read_csv('calcs/vwind2009-2011.csv', parse_dates=True, index_col=0)['-2.68748617172']
         varfull = np.unwrap(np.arctan2(varfull1, varfull2))
+    # the following are specific to one case only
     elif which == 'drifters_subtidal':
-        Files = glob('calcs/df_*.csv')
+        Files = glob('calcs/enterexit/newsuperposition/df_*.csv')
         varfull = []
         for File in Files:
             varfull.extend(pd.read_csv(File, parse_dates=True, index_col=0)['drifters_subtidal'])
         varfull = np.asarray(varfull)
+    elif which == 'drifters_tidal':
+        Files = glob('calcs/enterexit/newsuperposition/df_*.csv')
+        varfull = []
+        for File in Files:
+            varfull.extend(pd.read_csv(File, parse_dates=True, index_col=0)['drifters_tidal'])
+        varfull = np.asarray(varfull)
+    elif which == 'drifters':
+        Files = glob('calcs/enterexit/newsuperposition/df_*.csv')
+        varfull = []
+        for File in Files:
+            varfull.extend(pd.read_csv(File, parse_dates=True, index_col=0)['drifters'])
+        varfull = np.asarray(varfull)
 
+    # import pdb; pdb.set_trace()
     if np.isnan(varfull).sum()>0:
         return (df[which] - np.nanmean(varfull))/np.nanstd(varfull)
     else:
@@ -257,7 +305,10 @@ def scaled(df, combo, which='subtidal'):
     dfscaled = pd.DataFrame()
     for item in list(combo):
         dfscaled[item] = transform(df, which=item)  # scale using years-long data
-    item = 'drifters_' + which
+    if 'tidal' in which:
+        item = 'drifters_' + which
+    else:
+        item = 'drifters'
     dfscaled[item] = (df[item] - df[item].mean())/df[item].std()
 
     return dfscaled
@@ -270,9 +321,10 @@ def stats(which='subtidal', direction='forward', simname='newsuperposition'):
     drifters stay outside.'''
 
     # Files = glob('calcs/df_????-??_*ward.csv')
-    Files = glob('calcs/enterexit/' + simname + '/df_????-??_.csv')
+    Files = glob('calcs/enterexit/' + simname + '/df_????-??.csv')
     # Files = glob('calcs/enterexit/' + simname + '/df_????-??_' + direction + '.csv')
     # Files = glob('calcs/df_2010-02_forward.csv')
+    # import pdb; pdb.set_trace()
     for File in Files:
         # print(File)
         df = pd.read_csv(File, parse_dates=True, index_col=0)
@@ -286,9 +338,12 @@ def stats(which='subtidal', direction='forward', simname='newsuperposition'):
             # run ordinary least squares analysis on drifter column vs. combination of mechanisms
             # create temporary new dataframe for this loop's analysis where all
             # variables are scaled
-            dfscaled = scaled(df, combo)
+            dfscaled = scaled(df, combo, which=which)
             # import pdb; pdb.set_trace()
-            models.append(ols('drifters_' + which + ' ~ ' + " + ".join(list(combo)), dfscaled).fit())
+            if 'tidal' in which:
+                models.append(ols('drifters_' + which + ' ~ ' + " + ".join(list(combo)), dfscaled).fit())
+            else:
+                models.append(ols('drifters' + ' ~ ' + " + ".join(list(combo)), dfscaled).fit())
             dfscaleds.append(dfscaled)
 
         # find top N r^2, lowest BIC values

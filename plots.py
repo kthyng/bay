@@ -18,8 +18,6 @@ import numpy as np
 import os
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 import matplotlib.ticker as mticker
-import octant
-import tracpy
 
 
 mpl.rcParams.update({'font.size': 12})
@@ -80,7 +78,7 @@ def setup(which='land'):
     return fig, ax
 
 
-def conditions(season, direction='forward', plotdrifters=True):
+def conditions(season, direction='forward', plotdrifters=True, simname='newsuperposition'):
     '''Plot wind, river, tide for selected time periods.'''
 
     # plotdrifters = True  # whether or not to plot summary drifter results for same time period
@@ -98,7 +96,7 @@ def conditions(season, direction='forward', plotdrifters=True):
         day = 15
         basename = '_backward' + basename
         dtitle = 'Number drifters\noutside bay'
-    refdates = [datetime(2010, month, day, 0, 0), datetime(2011, month, day, 0, 0)]
+    refdates = [datetime(2010, month, day, 0, 0)]#, datetime(2011, month, day, 0, 0)]
 
     dys = [-10, 10]
     dy2s = [-0.4, 0.4]
@@ -131,7 +129,8 @@ def conditions(season, direction='forward', plotdrifters=True):
         name = start + '-' + stop + '_'
 
         # read in dataframe
-        File = 'calcs/enterexit/df_' + refdate.isoformat()[:7] + '_' + direction + '.csv'
+        File = 'calcs/enterexit/' + simname + '/df_' + refdate.isoformat()[:7] + '.csv'
+        # File = 'calcs/enterexit/' + name + '/df_' + refdate.isoformat()[:7] + '_' + direction + '.csv'
         df = pd.read_csv(File, parse_dates=True, index_col=0)
 
         # tide: from blended model output
@@ -220,6 +219,8 @@ def tracks():
 def drifters(which='df_2010-07.csv'):
     '''Plot drifters in time from multiple simulations.'''
 
+    import octant
+    import tracpy
     year = '2010'
     month = '07'
     plotdriftersum = True  # add sum of drifter exits in time
